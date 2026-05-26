@@ -705,6 +705,7 @@ const ADMIN_APPS = [
   { key: "finance", label: "FM", modules: ["employees", "salary_payments", "operational_expenses", "expense_advances"] },
   { key: "mm", label: "MPM", modules: ["purchases", "vendor_payments"] },
   { key: "pm", label: "PM", modules: ["production", "material_usage", "material_stock"] },
+  { key: "maintenance", label: "MN", modules: ["machine_maintenance"] },
   { key: "leadership", label: "LD", modules: ["sales", "payments", "customers", "dues", "leads", "purchases", "vendor_payments", "production", "material_usage", "material_stock", "operational_expenses", "salary_payments", "expense_advances"] },
   { key: "admin", label: "Admin", modules: ["users", "products", "materials_master", "resources", "enum_values"] }
 ];
@@ -887,7 +888,8 @@ async function deleteVendorPayment(paymentId) { return api(`/api/mm/vendor-payme
 
 let PM = { productions: [], usage: [], stock: [], products: [], materials: [], machines: [], operators: [] };
 let RM = { machines: [], operators: [] };
-let filteredPmRuns = [], filteredPmUsage = [], filteredRmMachines = [], filteredRmOperators = [];
+let MAINT = { records: [], machines: [] };
+let filteredPmRuns = [], filteredPmUsage = [], filteredRmMachines = [], filteredRmOperators = [], filteredMaintRecords = [];
 let pmRunBatch = [], pmUsageBatch = [];
 
 async function getPMData() {
@@ -933,6 +935,15 @@ async function deleteMachine(machineId) { return api(`/api/rm/machines/${encodeU
 async function addOperator(data) { return api("/api/rm/operators", { method: "POST", body: JSON.stringify(data) }); }
 async function updateOperator(operatorId, data) { return api(`/api/rm/operators/${encodeURIComponent(operatorId)}`, { method: "PUT", body: JSON.stringify(data) }); }
 async function deleteOperator(operatorId) { return api(`/api/rm/operators/${encodeURIComponent(operatorId)}`, { method: "DELETE" }); }
+
+async function getMaintenanceData() {
+  const data = await api("/api/maintenance/initial");
+  MAINT = { records: Array.isArray(data.records) ? data.records : [], machines: Array.isArray(data.machines) ? data.machines : [] };
+  return MAINT;
+}
+async function addMaintenanceRecord(data) { return api("/api/maintenance/records", { method: "POST", body: JSON.stringify(data) }); }
+async function updateMaintenanceRecord(maintenanceId, data) { return api(`/api/maintenance/records/${encodeURIComponent(maintenanceId)}`, { method: "PUT", body: JSON.stringify(data) }); }
+async function deleteMaintenanceRecord(maintenanceId) { return api(`/api/maintenance/records/${encodeURIComponent(maintenanceId)}`, { method: "DELETE" }); }
 
 let FIN = { expenses: [], salary: [], advances: [], employees: [], enums: [] };
 let filteredFinExpenses = [], filteredFinSalary = [], filteredFinAdvances = [], filteredFinEmployees = [];
@@ -1454,6 +1465,7 @@ function makeRunner() {
     getMMData, addPurchase, addPurchasesBulk, updatePurchase, deletePurchase, addVendorPayment, updateVendorPayment, deleteVendorPayment,
     getPMData, addProduction, addProductionsBulk, updateProduction, deleteProduction, addMaterialUsage, addMaterialUsageBulk, updateMaterialUsage, deleteMaterialUsage,
     getRMData, getRMOperators, addMachine, updateMachine, deleteMachine, addOperator, updateOperator, deleteOperator,
+    getMaintenanceData, addMaintenanceRecord, updateMaintenanceRecord, deleteMaintenanceRecord,
     getFinanceEmployees, addEmployee, updateEmployee, deleteEmployee
   ].forEach((fn) => {
     proxy[fn.name] = (...args) => {
@@ -1496,6 +1508,7 @@ function appDefaultPage(appKey) {
   if (appKey === "leadership") return "leadership-dash";
   if (appKey === "mm") return "mm-dash";
   if (appKey === "pm") return sessionCan("production", "create") ? "pm-run-new" : sessionCanView("production") ? "pm-runs" : "pm-dash";
+  if (appKey === "maintenance") return sessionCan("machine_maintenance", "create") ? "maint-new" : sessionCanView("machine_maintenance") ? "maint-records" : "maint-dash";
   if (appKey === "marketing") return sessionCan("leads", "create") ? "leads-add" : sessionCanView("leads") ? "leads" : "leads-dash";
   if (appKey === "finance") {
     if (sessionCan("operational_expenses", "create")) return "fin-expense-new";
@@ -1620,6 +1633,9 @@ const PAGE_META = {
   "pm-run-new": { title: "New Production Run", badge: "PM", nav: "pm-runs", app: "pm" },
   "pm-usage": { title: "Material Usage", badge: "PM", nav: "pm-usage", app: "pm" },
   "pm-usage-new": { title: "Log Material Usage", badge: "PM", nav: "pm-usage", app: "pm" },
+  "maint-dash": { title: "Machine Maintenance", badge: "MN", nav: "maint-dash", app: "maintenance" },
+  "maint-records": { title: "Maintenance Records", badge: "MN", nav: "maint-records", app: "maintenance" },
+  "maint-new": { title: "New Maintenance", badge: "MN", nav: "maint-new", app: "maintenance" },
   "rm-dash": { title: "Resource Management", badge: "ADMIN", nav: "admin-rm", app: "admin" },
   "rm-machines": { title: "Machines", badge: "ADMIN", nav: "admin-rm", app: "admin" },
   "rm-machine-new": { title: "New Machine", badge: "ADMIN", nav: "admin-rm", app: "admin" },
@@ -1685,6 +1701,9 @@ const SUB_TABS = {
   "pm-run-new": [{ id: "pm-dash", label: "Dashboard" }, { id: "pm-runs", label: "Runs" }, { id: "pm-run-new", label: "New Run" }, { id: "pm-usage", label: "Usage" }, { id: "pm-usage-new", label: "Log Usage" }],
   "pm-usage": [{ id: "pm-dash", label: "Dashboard" }, { id: "pm-runs", label: "Runs" }, { id: "pm-run-new", label: "New Run" }, { id: "pm-usage", label: "Usage" }, { id: "pm-usage-new", label: "Log Usage" }],
   "pm-usage-new": [{ id: "pm-dash", label: "Dashboard" }, { id: "pm-runs", label: "Runs" }, { id: "pm-run-new", label: "New Run" }, { id: "pm-usage", label: "Usage" }, { id: "pm-usage-new", label: "Log Usage" }],
+  "maint-dash": [{ id: "maint-dash", label: "Dashboard", module: "machine_maintenance" }, { id: "maint-records", label: "Records", module: "machine_maintenance" }, { id: "maint-new", label: "+ New", module: "machine_maintenance", action: "create" }],
+  "maint-records": [{ id: "maint-dash", label: "Dashboard", module: "machine_maintenance" }, { id: "maint-records", label: "Records", module: "machine_maintenance" }, { id: "maint-new", label: "+ New", module: "machine_maintenance", action: "create" }],
+  "maint-new": [{ id: "maint-dash", label: "Dashboard", module: "machine_maintenance" }, { id: "maint-records", label: "Records", module: "machine_maintenance" }, { id: "maint-new", label: "+ New", module: "machine_maintenance", action: "create" }],
   "rm-dash": [{ id: "rm-dash", label: "Dashboard", module: "resources" }, { id: "rm-machines", label: "Machines", module: "resources" }, { id: "rm-machine-new", label: "+ New Machine", module: "resources", action: "create" }, { id: "rm-operators", label: "Operators", module: "resources" }, { id: "rm-operator-new", label: "+ New Operator", module: "resources", action: "create" }],
   "rm-machines": [{ id: "rm-dash", label: "Dashboard", module: "resources" }, { id: "rm-machines", label: "Machines", module: "resources" }, { id: "rm-machine-new", label: "+ New Machine", module: "resources", action: "create" }, { id: "rm-operators", label: "Operators", module: "resources" }, { id: "rm-operator-new", label: "+ New Operator", module: "resources", action: "create" }],
   "rm-machine-new": [{ id: "rm-dash", label: "Dashboard", module: "resources" }, { id: "rm-machines", label: "Machines", module: "resources" }, { id: "rm-machine-new", label: "+ New Machine", module: "resources", action: "create" }, { id: "rm-operators", label: "Operators", module: "resources" }, { id: "rm-operator-new", label: "+ New Operator", module: "resources", action: "create" }],
@@ -1719,6 +1738,9 @@ const PAGE_ACCESS = {
   "rm-machine-new": { module: "resources", action: "create" },
   "rm-operators": { module: "resources", action: "view" },
   "rm-operator-new": { module: "resources", action: "create" },
+  "maint-dash": { module: "machine_maintenance", action: "view" },
+  "maint-records": { module: "machine_maintenance", action: "view" },
+  "maint-new": { module: "machine_maintenance", action: "create" },
   "finance-dash": { any: ["employees", "operational_expenses", "salary_payments", "expense_advances"], action: "view" },
   "fin-expenses": { module: "operational_expenses", action: "view" },
   "fin-expense-new": { module: "operational_expenses", action: "create" },
@@ -1748,7 +1770,7 @@ function switchApp(appName) {
     showPage("home");
     return;
   }
-  currentApp = ["mm", "pm", "admin", "marketing", "finance", "leadership"].includes(appName) ? appName : "sales";
+  currentApp = ["mm", "pm", "maintenance", "admin", "marketing", "finance", "leadership"].includes(appName) ? appName : "sales";
   showPage(appDefaultPage(currentApp));
 }
 
@@ -1774,6 +1796,7 @@ function showPage(pageId) {
   document.getElementById("mdmBottomNav").classList.toggle("hidden", currentApp !== "mdm");
   document.getElementById("mmBottomNav").classList.toggle("hidden", currentApp !== "mm");
   document.getElementById("pmBottomNav").classList.toggle("hidden", currentApp !== "pm");
+  document.getElementById("maintenanceBottomNav").classList.toggle("hidden", currentApp !== "maintenance");
   document.getElementById("rmBottomNav").classList.toggle("hidden", currentApp !== "rm");
   document.getElementById("adminBottomNav").classList.toggle("hidden", currentApp !== "admin");
   document.getElementById("leadershipBottomNav").classList.toggle("hidden", currentApp !== "leadership");
@@ -1813,6 +1836,7 @@ function initPage(p) {
     "mm-pur-new": purFormInit, "mm-payments": payvListInit, "mm-pay-new": payvFormInit,
     "pm-dash": pmDashInit, "pm-runs": pmRunListInit, "pm-run-new": pmRunFormInit,
     "pm-usage": pmUsageListInit, "pm-usage-new": pmUsageFormInit,
+    "maint-dash": maintDashInit, "maint-records": maintRecordsInit, "maint-new": maintFormInit,
     "rm-dash": rmDashInit, "rm-machines": rmMachineListInit, "rm-machine-new": rmMachineFormInit,
     "rm-operators": rmOperatorListInit, "rm-operator-new": rmOperatorFormInit,
     "admin-dash": adminDashInit, "admin-users": adminUsersInit, "admin-user-new": adminUserFormInit, "admin-apps": adminAppsInit,
@@ -2539,7 +2563,9 @@ function invalidatePM() { ["pm-dash", "pm-runs", "pm-run-new", "pm-usage", "pm-u
 function invalidateRM(options = {}) {
   ["rm-dash", "rm-machines", "rm-machine-new", "rm-operators", "rm-operator-new"].forEach((p) => loadedPages.delete(p));
   ["pm-runs", "pm-run-new", "pm-usage", "pm-usage-new"].forEach((p) => loadedPages.delete(p));
+  ["maint-dash", "maint-records", "maint-new"].forEach((p) => loadedPages.delete(p));
   PM = { productions: [], usage: [], stock: [], products: [], materials: [], machines: [], operators: [] };
+  MAINT = { records: [], machines: [] };
   if (options.operatorsChanged) {
     ["finance-dash", "fin-employees", "fin-employee-new", "fin-salary-new"].forEach((p) => loadedPages.delete(p));
     FIN = { expenses: [], salary: [], advances: [], employees: [], enums: [] };
@@ -2548,6 +2574,8 @@ function invalidateRM(options = {}) {
 }
 function pmLoadThen(fn) { if (PM.productions.length || PM.usage.length || PM.products.length || PM.materials.length || PM.machines.length || PM.operators.length) { fn(); return; } showLoader("Loading production..."); google.script.run.withSuccessHandler(() => { hideLoader(); fn(); }).withFailureHandler((e) => { hideLoader(); showToast(e, "error"); }).getPMData(); }
 function rmLoadThen(fn) { if (RM.machines.length || RM.operators.length) { fn(); return; } showLoader("Loading resources..."); google.script.run.withSuccessHandler(() => { hideLoader(); fn(); }).withFailureHandler((e) => { hideLoader(); showToast(e, "error"); }).getRMData(); }
+function invalidateMaintenance() { ["maint-dash", "maint-records", "maint-new"].forEach((p) => loadedPages.delete(p)); MAINT = { records: [], machines: [] }; return getMaintenanceData(); }
+function maintenanceLoadThen(fn) { if (MAINT.records.length || MAINT.machines.length) { fn(); return; } showLoader("Loading maintenance..."); google.script.run.withSuccessHandler(() => { hideLoader(); fn(); }).withFailureHandler((e) => { hideLoader(); showToast(e, "error"); }).getMaintenanceData(); }
 function isActiveStatus(value) { return String(value || "Active").trim().toLowerCase() === "active"; }
 function pmMachineOptions(selectedId = "", selectedName = "") { return '<option value="">Select machine...</option>' + PM.machines.filter((m) => isActiveStatus(m.status) || m.machineId === selectedId || m.machineName === selectedName).map((m) => `<option value="${m.machineId}" data-name="${m.machineName}"${m.machineId === selectedId || (!selectedId && m.machineName === selectedName) ? " selected" : ""}>${m.machineName}${m.machineType ? " (" + m.machineType + ")" : ""}</option>`).join(""); }
 function pmOperatorOptions(selectedId = "", selectedName = "") { return '<option value="">Select operator...</option>' + PM.operators.filter((o) => isActiveStatus(o.status) || o.operatorId === selectedId || o.operatorName === selectedName).map((o) => `<option value="${o.operatorId}" data-name="${o.operatorName}"${o.operatorId === selectedId || (!selectedId && o.operatorName === selectedName) ? " selected" : ""}>${o.operatorName}${o.shift ? " (" + o.shift + ")" : ""}</option>`).join(""); }
@@ -2571,6 +2599,134 @@ function pmInPeriod(dateValue, period) {
   if (!range.start || !range.end) return true;
   const value = toDateInputValue(dateValue);
   return value >= range.start && value <= range.end;
+}
+
+function maintenanceMachineOptions(selectedId = "") {
+  return '<option value="">Select machine...</option>' + MAINT.machines.map((m) => `<option value="${m.machineId}" data-name="${escapeHtml(m.machineName)}"${m.machineId === selectedId ? " selected" : ""}>${escapeHtml(m.machineName)}${m.machineType ? " (" + escapeHtml(m.machineType) + ")" : ""}</option>`).join("");
+}
+
+function maintDashInit() { maintenanceLoadThen(maintDashRender); }
+function maintDashRender() {
+  const records = MAINT.records || [];
+  const today = todayYmd();
+  const monthRecords = records.filter((r) => pmInPeriod(r.maintenanceDate, "this_month"));
+  const overdue = records.filter((r) => r.nextDueDate && r.nextDueDate < today && !["Completed", "Cancelled"].includes(r.status));
+  document.getElementById("maint-stat-total").textContent = records.length;
+  document.getElementById("maint-stat-scheduled").textContent = records.filter((r) => r.status === "Scheduled").length;
+  document.getElementById("maint-stat-overdue").textContent = overdue.length;
+  document.getElementById("maint-stat-month").textContent = monthRecords.filter((r) => r.status === "Completed").length;
+  document.getElementById("maint-stat-downtime").textContent = fmtNum(records.reduce((s, r) => s + Number(r.downtimeHours || 0), 0), 1);
+  document.getElementById("maint-stat-cost").textContent = fmtINR0(records.reduce((s, r) => s + Number(r.totalCost || 0), 0));
+  const byType = {};
+  records.forEach((r) => { byType[r.maintenanceType || "Other"] = (byType[r.maintenanceType || "Other"] || 0) + Number(r.totalCost || 0); });
+  document.getElementById("maint-cost-types").innerHTML = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, amount]) => `<div class="recent-chip"><div class="recent-av">₹</div><div style="flex:1;min-width:0;"><div class="recent-name">${escapeHtml(type)}</div><div class="recent-meta">Maintenance cost</div></div><span class="amount-tag">${fmtINR0(amount)}</span></div>`).join("") || '<div class="empty"><p>No maintenance costs yet.</p></div>';
+  const upcoming = records.filter((r) => r.nextDueDate && r.status !== "Cancelled").sort((a, b) => String(a.nextDueDate).localeCompare(String(b.nextDueDate))).slice(0, 8);
+  document.getElementById("maint-upcoming").innerHTML = upcoming.map((r) => `<div class="recent-chip"><div class="recent-av">MN</div><div style="flex:1;min-width:0;"><div class="recent-name">${escapeHtml(r.machineName || "-")}</div><div class="recent-meta">${escapeHtml(r.maintenanceType || "-")} - due ${escapeHtml(r.nextDueDate || "-")}</div></div><span class="badge ${r.nextDueDate < today && r.status !== "Completed" ? "inactive" : activeStatusClass(r.status)}">${escapeHtml(r.status || "-")}</span></div>`).join("") || '<div class="empty"><p>No upcoming maintenance scheduled.</p></div>';
+}
+
+function maintRecordsInit() {
+  maintenanceLoadThen(() => {
+    document.getElementById("maint-machine-filter").innerHTML = '<option value="">All Machines</option>' + MAINT.machines.map((m) => `<option value="${m.machineId}">${escapeHtml(m.machineName)}</option>`).join("");
+    maintApply();
+  });
+}
+function maintApply() {
+  const term = (document.getElementById("maint-search")?.value || "").toLowerCase();
+  const period = document.getElementById("maint-period")?.value || "this_month";
+  const status = document.getElementById("maint-status")?.value || "";
+  const machineId = document.getElementById("maint-machine-filter")?.value || "";
+  const type = document.getElementById("maint-type-filter")?.value || "";
+  filteredMaintRecords = MAINT.records.filter((r) => pmInPeriod(r.maintenanceDate, period) && (!status || r.status === status) && (!machineId || r.machineId === machineId) && (!type || r.maintenanceType === type) && (!term || `${r.maintenanceId} ${r.machineName} ${r.maintenanceType} ${r.status} ${r.issueNotes} ${r.workDone} ${r.partsUsed}`.toLowerCase().includes(term)));
+  maintRender();
+}
+function maintRender() {
+  document.getElementById("maint-count").textContent = `${filteredMaintRecords.length} records`;
+  document.getElementById("maint-list").innerHTML = filteredMaintRecords.map((r) => `<div class="product-item"><div class="product-icon">MN</div><div class="product-body"><div class="product-id">${escapeHtml(r.maintenanceId)} - ${escapeHtml(r.maintenanceDate || "-")}</div><div class="product-title">${escapeHtml(r.machineName || "-")}</div><div class="product-sub">${escapeHtml(r.maintenanceType || "-")} - ${escapeHtml(r.priority || "Normal")} - downtime ${fmtNum(r.downtimeHours, 1)} hrs</div><div class="product-sub">Parts ${fmtINR0(r.sparePartsCost)} - Oil ${fmtINR0(r.oilCost)} - Repair ${fmtINR0(r.repairCost)} - Labor ${fmtINR0(r.laborCost)} - Other ${fmtINR0(r.otherCost)}</div></div><div class="product-actions"><span class="amount-tag">${fmtINR0(r.totalCost)}</span><span class="badge ${activeStatusClass(r.status)}">${escapeHtml(r.status || "-")}</span><div class="icon-row"><button class="icon-btn" onclick="maintEdit('${r.maintenanceId}')">ED</button><button class="icon-btn" onclick="maintDelete('${r.maintenanceId}')">X</button></div></div></div>`).join("") || '<div class="empty"><p>No maintenance records found.</p></div>';
+}
+function maintFormInit() { maintenanceLoadThen(() => { document.getElementById("maint-machine").innerHTML = maintenanceMachineOptions(); if (!document.getElementById("maint-id").value) maintResetForm(); }); }
+function maintCostPreview() {
+  const total = ["maint-spare-cost", "maint-oil-cost", "maint-repair-cost", "maint-labor-cost", "maint-other-cost"].reduce((sum, id) => sum + Number(document.getElementById(id)?.value || 0), 0);
+  const target = document.getElementById("maint-total-cost");
+  if (target) target.value = fmtINR0(total);
+}
+function maintResetForm() {
+  ["maint-id", "maint-performed-by", "maint-next-due", "maint-downtime", "maint-spare-cost", "maint-oil-cost", "maint-repair-cost", "maint-labor-cost", "maint-other-cost", "maint-total-cost", "maint-issue-notes", "maint-work-done", "maint-parts-used", "maint-damage-notes"].forEach((id) => { document.getElementById(id).value = ""; });
+  document.getElementById("maint-machine").innerHTML = maintenanceMachineOptions();
+  document.getElementById("maint-date").value = todayYmd();
+  document.getElementById("maint-type").value = "Preventive";
+  document.getElementById("maint-status-field").value = "Scheduled";
+  document.getElementById("maint-priority").value = "Normal";
+  document.getElementById("maint-edit-banner").classList.add("hidden");
+  document.getElementById("maint-form-title").textContent = "New Maintenance";
+  document.getElementById("maint-submit").textContent = "Save Maintenance";
+}
+function maintPayload() {
+  const machineSelect = document.getElementById("maint-machine");
+  const selected = machineSelect.selectedOptions[0];
+  return {
+    machineId: machineSelect.value,
+    machineName: selected?.getAttribute("data-name") || "",
+    maintenanceDate: document.getElementById("maint-date").value,
+    nextDueDate: document.getElementById("maint-next-due").value,
+    maintenanceType: document.getElementById("maint-type").value,
+    status: document.getElementById("maint-status-field").value,
+    priority: document.getElementById("maint-priority").value,
+    performedBy: document.getElementById("maint-performed-by").value.trim(),
+    downtimeHours: Number(document.getElementById("maint-downtime").value || 0),
+    sparePartsCost: Number(document.getElementById("maint-spare-cost").value || 0),
+    oilCost: Number(document.getElementById("maint-oil-cost").value || 0),
+    repairCost: Number(document.getElementById("maint-repair-cost").value || 0),
+    laborCost: Number(document.getElementById("maint-labor-cost").value || 0),
+    otherCost: Number(document.getElementById("maint-other-cost").value || 0),
+    issueNotes: document.getElementById("maint-issue-notes").value.trim(),
+    workDone: document.getElementById("maint-work-done").value.trim(),
+    partsUsed: document.getElementById("maint-parts-used").value.trim(),
+    damageNotes: document.getElementById("maint-damage-notes").value.trim()
+  };
+}
+function maintEdit(maintenanceId) {
+  const r = MAINT.records.find((row) => row.maintenanceId === maintenanceId);
+  if (!r) return;
+  loadedPages.add("maint-new");
+  document.getElementById("maint-machine").innerHTML = maintenanceMachineOptions(r.machineId);
+  showPage("maint-new");
+  document.getElementById("maint-id").value = r.maintenanceId;
+  document.getElementById("maint-date").value = toDateInputValue(r.maintenanceDate) || todayYmd();
+  document.getElementById("maint-next-due").value = toDateInputValue(r.nextDueDate);
+  document.getElementById("maint-type").value = r.maintenanceType || "Preventive";
+  document.getElementById("maint-status-field").value = r.status || "Scheduled";
+  document.getElementById("maint-priority").value = r.priority || "Normal";
+  document.getElementById("maint-performed-by").value = r.performedBy || "";
+  document.getElementById("maint-downtime").value = r.downtimeHours || "";
+  document.getElementById("maint-spare-cost").value = r.sparePartsCost || "";
+  document.getElementById("maint-oil-cost").value = r.oilCost || "";
+  document.getElementById("maint-repair-cost").value = r.repairCost || "";
+  document.getElementById("maint-labor-cost").value = r.laborCost || "";
+  document.getElementById("maint-other-cost").value = r.otherCost || "";
+  document.getElementById("maint-issue-notes").value = r.issueNotes || "";
+  document.getElementById("maint-work-done").value = r.workDone || "";
+  document.getElementById("maint-parts-used").value = r.partsUsed || "";
+  document.getElementById("maint-damage-notes").value = r.damageNotes || "";
+  maintCostPreview();
+  document.getElementById("maint-edit-banner").classList.remove("hidden");
+  document.getElementById("maint-edit-label").textContent = `Editing: ${r.maintenanceId}`;
+  document.getElementById("maint-form-title").textContent = "Edit Maintenance";
+  document.getElementById("maint-submit").textContent = "Update Maintenance";
+}
+function maintSubmit() {
+  const maintenanceId = document.getElementById("maint-id").value.trim();
+  const payload = maintPayload();
+  if (!payload.machineId) { showToast("Machine is required", "error"); return; }
+  if (!payload.maintenanceDate) { showToast("Maintenance date is required", "error"); return; }
+  const btn = document.getElementById("maint-submit");
+  btn.disabled = true;
+  const ok = (res) => { btn.disabled = false; if (res.success) invalidateMaintenance().then(() => { showToast(maintenanceId ? "Maintenance updated" : "Maintenance saved", "success"); maintResetForm(); showPage("maint-records"); maintRecordsInit(); }); };
+  const fail = (e) => { btn.disabled = false; showToast(e, "error"); };
+  return maintenanceId ? google.script.run.withSuccessHandler(ok).withFailureHandler(fail).updateMaintenanceRecord(maintenanceId, payload) : google.script.run.withSuccessHandler(ok).withFailureHandler(fail).addMaintenanceRecord(payload);
+}
+function maintDelete(maintenanceId) {
+  if (!confirm("Delete this maintenance record?")) return;
+  google.script.run.withSuccessHandler((res) => { if (res.success) invalidateMaintenance().then(() => { showToast("Maintenance deleted", "success"); maintRecordsInit(); }); }).withFailureHandler((e) => showToast(e, "error")).deleteMaintenanceRecord(maintenanceId);
 }
 
 function pmIsMaterialKind(row, kind) {

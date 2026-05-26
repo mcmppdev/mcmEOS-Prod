@@ -26,7 +26,8 @@ const envScopedTables = new Set([
   "public.material_purchases",
   "public.vendor_payments",
   "public.productions",
-  "public.material_usage"
+  "public.material_usage",
+  "public.machine_maintenance"
 ]);
 
 function dbHost() {
@@ -1067,6 +1068,33 @@ function normalizeMachine(row) {
     location: row.location || "",
     lastMaintenance: toDateYmd(row.last_maintenance),
     notes: row.notes || ""
+  };
+}
+
+function normalizeMaintenance(row) {
+  return {
+    maintenanceId: row.maintenance_id,
+    machineId: row.machine_id || "",
+    machineName: row.machine_name_snapshot || "",
+    maintenanceDate: toDateYmd(row.maintenance_date),
+    nextDueDate: toDateYmd(row.next_due_date),
+    maintenanceType: row.maintenance_type || "Preventive",
+    status: row.status || "Scheduled",
+    priority: row.priority || "Normal",
+    performedBy: row.performed_by || "",
+    downtimeHours: Number(row.downtime_hours || 0),
+    sparePartsCost: Number(row.spare_parts_cost || 0),
+    oilCost: Number(row.oil_cost || 0),
+    repairCost: Number(row.repair_cost || 0),
+    laborCost: Number(row.labor_cost || 0),
+    otherCost: Number(row.other_cost || 0),
+    totalCost: Number(row.total_cost || 0),
+    issueNotes: row.issue_notes || "",
+    workDone: row.work_done || "",
+    partsUsed: row.parts_used || "",
+    damageNotes: row.damage_notes || "",
+    createdByName: row.created_by_name || "",
+    updatedByName: row.updated_by_name || ""
   };
 }
 
@@ -3763,6 +3791,192 @@ app.delete("/api/pm/material-usage/:usageId", requireAuth, async (req, res) => {
     if (!modulePermission(req, "material_usage", "delete")) return res.status(403).json({ error: "Forbidden" });
     const { rowCount } = await pool.query("delete from public.material_usage where usage_id = $1 and source_env = $2", [String(req.params.usageId || "").trim(), envTag()]);
     if (!rowCount) return res.status(404).json({ error: "Usage record not found." });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: clientSafeError(error) });
+  }
+});
+
+function maintenancePayload(body = {}) {
+  const sparePartsCost = Number(body.sparePartsCost || 0);
+  const oilCost = Number(body.oilCost || 0);
+  const repairCost = Number(body.repairCost || 0);
+  const laborCost = Number(body.laborCost || 0);
+  const otherCost = Number(body.otherCost || 0);
+  return {
+    machineId: String(body.machineId || "").trim(),
+    machineName: String(body.machineName || "").trim(),
+    maintenanceDate: String(body.maintenanceDate || "").trim(),
+    nextDueDate: String(body.nextDueDate || "").trim() || null,
+    maintenanceType: String(body.maintenanceType || "Preventive").trim() || "Preventive",
+    status: String(body.status || "Scheduled").trim() || "Scheduled",
+    priority: String(body.priority || "Normal").trim() || "Normal",
+    performedBy: String(body.performedBy || "").trim(),
+    downtimeHours: Number(body.downtimeHours || 0),
+    sparePartsCost,
+    oilCost,
+    repairCost,
+    laborCost,
+    otherCost,
+    totalCost: sparePartsCost + oilCost + repairCost + laborCost + otherCost,
+    issueNotes: String(body.issueNotes || "").trim(),
+    workDone: String(body.workDone || "").trim(),
+    partsUsed: String(body.partsUsed || "").trim(),
+    damageNotes: String(body.damageNotes || "").trim()
+  };
+}
+
+async function resolveMaintenanceMachine(client, payload) {
+  if (payload.machineId) {
+    const { rows } = await client.query(
+      "select machine_id, machine_name from public.machines where machine_id = $1 limit 1",
+      [payload.machineId]
+    );
+    if (rows[0]) return { machineId: rows[0].machine_id, machineName: rows[0].machine_name || payload.machineName };
+  }
+  if (payload.machineName) {
+    const { rows } = await client.query(
+      "select machine_id, machine_name from public.machines where lower(trim(machine_name)) = lower(trim($1)) order by machine_id asc limit 1",
+      [payload.machineName]
+    );
+    if (rows[0]) return { machineId: rows[0].machine_id, machineName: rows[0].machine_name };
+  }
+  return { machineId: payload.machineId || null, machineName: payload.machineName };
+}
+
+async function touchMachineMaintenanceDate(client, record) {
+  if (record.status !== "Completed" || !record.machine_id || !record.maintenance_date) return;
+  await client.query(
+    `
+    update public.machines
+    set last_maintenance = greatest(coalesce(last_maintenance, $2::date), $2::date),
+        updated_at = now()
+    where machine_id = $1
+    `,
+    [record.machine_id, toDateYmd(record.maintenance_date)]
+  );
+}
+
+app.get("/api/maintenance/initial", requireAuth, async (req, res) => {
+  try {
+    if (!modulePermission(req, "machine_maintenance", "view")) return res.status(403).json({ error: "Forbidden" });
+    const [recordsRes, machinesRes] = await Promise.all([
+      pool.query(
+        `
+        select maintenance_id, machine_id, machine_name_snapshot, maintenance_date, next_due_date,
+          maintenance_type, status, priority, performed_by, downtime_hours,
+          spare_parts_cost, oil_cost, repair_cost, labor_cost, other_cost, total_cost,
+          issue_notes, work_done, parts_used, damage_notes, created_by_name, updated_by_name
+        from public.machine_maintenance
+        where source_env = $1
+        order by maintenance_date desc nulls last, maintenance_id desc
+        limit 500
+        `,
+        [envTag()]
+      ),
+      pool.query("select machine_id, machine_name, machine_type, status, capacity_per_shift, location, last_maintenance, notes from public.machines order by machine_name asc, machine_id asc")
+    ]);
+    res.json({
+      records: recordsRes.rows.map(normalizeMaintenance),
+      machines: machinesRes.rows.map(normalizeMachine)
+    });
+  } catch (error) {
+    res.status(500).json({ error: clientSafeError(error) });
+  }
+});
+
+app.post("/api/maintenance/records", requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    if (!modulePermission(req, "machine_maintenance", "create")) return res.status(403).json({ error: "Forbidden" });
+    const p = maintenancePayload(req.body || {});
+    if (!p.machineId && !p.machineName) return res.status(400).json({ error: "Machine is required." });
+    if (!p.maintenanceDate) return res.status(400).json({ error: "Maintenance date is required." });
+    await client.query("begin");
+    const machineRef = await resolveMaintenanceMachine(client, p);
+    const maintenanceId = await nextSequentialId(client, "public.machine_maintenance", "maintenance_id", "MT-", 3);
+    const { rows } = await client.query(
+      `
+      insert into public.machine_maintenance (
+        maintenance_id, machine_id, machine_name_snapshot, maintenance_date, next_due_date,
+        maintenance_type, status, priority, performed_by, downtime_hours,
+        spare_parts_cost, oil_cost, repair_cost, labor_cost, other_cost, total_cost,
+        issue_notes, work_done, parts_used, damage_notes,
+        entered_by_user_id, last_edited_by_user_id, created_by_user_id, created_by_name,
+        updated_by_user_id, updated_by_name, source_env
+      )
+      values (
+        $1,$2,$3,$4::date,$5::date,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$21,$21,$22,$21,$22,$23
+      )
+      returning *
+      `,
+      [
+        maintenanceId, machineRef.machineId, machineRef.machineName, p.maintenanceDate, p.nextDueDate,
+        p.maintenanceType, p.status, p.priority, p.performedBy, p.downtimeHours,
+        p.sparePartsCost, p.oilCost, p.repairCost, p.laborCost, p.otherCost, p.totalCost,
+        p.issueNotes, p.workDone, p.partsUsed, p.damageNotes,
+        req.sessionData.user.userId, req.sessionData.user.displayName, envTag()
+      ]
+    );
+    await touchMachineMaintenanceDate(client, rows[0]);
+    await client.query("commit");
+    res.json({ success: true, maintenanceId, record: normalizeMaintenance(rows[0]) });
+  } catch (error) {
+    try { await client.query("rollback"); } catch (_err) {}
+    res.status(500).json({ error: clientSafeError(error) });
+  } finally {
+    client.release();
+  }
+});
+
+app.put("/api/maintenance/records/:maintenanceId", requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    if (!modulePermission(req, "machine_maintenance", "update")) return res.status(403).json({ error: "Forbidden" });
+    const p = maintenancePayload(req.body || {});
+    if (!p.machineId && !p.machineName) return res.status(400).json({ error: "Machine is required." });
+    if (!p.maintenanceDate) return res.status(400).json({ error: "Maintenance date is required." });
+    await client.query("begin");
+    const machineRef = await resolveMaintenanceMachine(client, p);
+    const { rows } = await client.query(
+      `
+      update public.machine_maintenance
+      set machine_id=$2, machine_name_snapshot=$3, maintenance_date=$4::date, next_due_date=$5::date,
+          maintenance_type=$6, status=$7, priority=$8, performed_by=$9, downtime_hours=$10,
+          spare_parts_cost=$11, oil_cost=$12, repair_cost=$13, labor_cost=$14, other_cost=$15, total_cost=$16,
+          issue_notes=$17, work_done=$18, parts_used=$19, damage_notes=$20,
+          last_edited_by_user_id=$21, updated_by_user_id=$21, updated_by_name=$22
+      where maintenance_id=$1 and source_env=$23
+      returning *
+      `,
+      [
+        String(req.params.maintenanceId || "").trim(), machineRef.machineId, machineRef.machineName,
+        p.maintenanceDate, p.nextDueDate, p.maintenanceType, p.status, p.priority, p.performedBy, p.downtimeHours,
+        p.sparePartsCost, p.oilCost, p.repairCost, p.laborCost, p.otherCost, p.totalCost,
+        p.issueNotes, p.workDone, p.partsUsed, p.damageNotes,
+        req.sessionData.user.userId, req.sessionData.user.displayName, envTag()
+      ]
+    );
+    if (!rows.length) { await client.query("rollback"); return res.status(404).json({ error: "Maintenance record not found." }); }
+    await touchMachineMaintenanceDate(client, rows[0]);
+    await client.query("commit");
+    res.json({ success: true, record: normalizeMaintenance(rows[0]) });
+  } catch (error) {
+    try { await client.query("rollback"); } catch (_err) {}
+    res.status(500).json({ error: clientSafeError(error) });
+  } finally {
+    client.release();
+  }
+});
+
+app.delete("/api/maintenance/records/:maintenanceId", requireAuth, async (req, res) => {
+  try {
+    if (!modulePermission(req, "machine_maintenance", "delete")) return res.status(403).json({ error: "Forbidden" });
+    const { rowCount } = await pool.query(
+      "delete from public.machine_maintenance where maintenance_id = $1 and source_env = $2",
+      [String(req.params.maintenanceId || "").trim(), envTag()]
+    );
+    if (!rowCount) return res.status(404).json({ error: "Maintenance record not found." });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: clientSafeError(error) });
