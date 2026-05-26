@@ -24,6 +24,8 @@
 const { Pool } = require("pg");
  
 const isProd = process.env.NODE_ENV === "production";
+const APP_ENV = process.env.APP_ENV === "dev" ? "dev" : "prod";
+
 function databaseConnectionString() {
   const raw = String(process.env.DATABASE_URL || "");
   if (!raw) return undefined;
@@ -51,6 +53,7 @@ function databaseSslConfig() {
 const pool = new Pool({
   connectionString: databaseConnectionString(),
   ssl: databaseSslConfig(),
+  options: `-c app.source_env=${APP_ENV}`,
   max: 1,
   connectionTimeoutMillis: 10000,
   idleTimeoutMillis: 30000,
@@ -59,8 +62,6 @@ const pool = new Pool({
 // ── Environment tag ───────────────────────────────────────────────────────────
 // Set APP_ENV=dev in your dev Vercel project env vars.
 // Leave it unset (or set APP_ENV=prod) in the production project.
- 
-const APP_ENV = process.env.APP_ENV === "dev" ? "dev" : "prod";
  
 if (!isProd) {
   console.log(`[db] APP_ENV = ${APP_ENV}`);

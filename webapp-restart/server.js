@@ -2,7 +2,7 @@ const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
 const cookieParser = require("cookie-parser");
-const { Pool } = require("pg");
+const { pool, APP_ENV, envTag } = require("./db");
 
 const app = express();
 const port = process.env.PORT || 4173;
@@ -11,37 +11,45 @@ const sessionTouchIntervalMs = 1000 * 60 * 5;
 const sessionRetentionDays = 30;
 
 const isProd = process.env.NODE_ENV === "production";
-function databaseConnectionString() {
-  const raw = String(process.env.DATABASE_URL || "");
-  if (!raw) return undefined;
-  try {
-    const url = new URL(raw);
-    ["sslmode", "sslcert", "sslkey", "sslrootcert"].forEach((key) => url.searchParams.delete(key));
-    return url.toString();
-  } catch (_error) {
-    return raw;
-  }
+const envScopedTables = new Set([
+  "public.contacts",
+  "public.accounts",
+  "public.leads",
+  "public.sales",
+  "public.sales_entries",
+  "public.sales_line_items",
+  "public.customer_payments",
+  "public.tasks",
+  "public.salary_payments",
+  "public.operational_expenses",
+  "public.expense_advances",
+  "public.material_purchases",
+  "public.vendor_payments",
+  "public.productions",
+  "public.material_usage"
+]);
+
+function dbHost() {
+  try { return new URL(String(process.env.DATABASE_URL || "")).hostname; } catch (_error) { return String(process.env.PGHOST || ""); }
 }
 
-function databaseSslConfig() {
-  const mode = String(process.env.DATABASE_SSL || "").trim().toLowerCase();
-  const url = String(process.env.DATABASE_URL || "");
-  const host = (() => {
-    try { return new URL(url).hostname; } catch (_error) { return String(process.env.PGHOST || ""); }
-  })();
-  const isLocalDb = ["", "localhost", "127.0.0.1", "::1"].includes(host);
-  if (isLocalDb && ["true", "1", "require", "required", "on"].includes(mode)) return { rejectUnauthorized: false };
-  if (isLocalDb) return false;
-  return { rejectUnauthorized: false };
+function dbSslEnabled() {
+  const host = dbHost();
+  return !["", "localhost", "127.0.0.1", "::1"].includes(host);
 }
 
-const pool = new Pool({
-  connectionString: databaseConnectionString(),
-  ssl: databaseSslConfig(),
-  max: 1,
-  connectionTimeoutMillis: 10000,
-  idleTimeoutMillis: 30000
-});
+function isEnvScopedTable(tableName) {
+  return envScopedTables.has(String(tableName || "").trim());
+}
+
+function envWhereSql(aliasOrTable = "", paramIndex = 1) {
+  const prefix = aliasOrTable ? `${aliasOrTable}.` : "";
+  return `${prefix}source_env = $${paramIndex}`;
+}
+
+function envScopedConfig(cfg) {
+  return cfg && isEnvScopedTable(cfg.table) ? { ...cfg, envScoped: true } : cfg;
+}
 
 app.use(express.json());
 app.use(cookieParser(process.env.SESSION_SECRET || "mcm-dev-secret"));
@@ -63,15 +71,13 @@ app.get("/index.html", (_req, res) => {
 });
 
 app.get("/api/deploy-info", (_req, res) => {
-  const dbHost = (() => {
-    try { return new URL(String(process.env.DATABASE_URL || "")).hostname; } catch (_error) { return String(process.env.PGHOST || ""); }
-  })();
   res.json({
     app: "webapp-restart",
     ui: "mcm-sales-suite",
     expectedAssets: ["/ui/app.js", "/ui/app.css"],
-    dbHost,
-    dbSsl: Boolean(databaseSslConfig())
+    dbHost: dbHost(),
+    dbSsl: dbSslEnabled(),
+    appEnv: APP_ENV
   });
 });
 
@@ -408,6 +414,7 @@ async function ensureLeadershipUsageTable() {
       username text,
       user_id text,
       period text,
+      source_env text not null default 'prod',
       status text not null default 'success',
       remaining_count integer not null default 0,
       created_at timestamptz not null default now()
@@ -417,6 +424,8 @@ async function ensureLeadershipUsageTable() {
     create index if not exists leadership_report_usage_month_status_idx
     on public.leadership_report_usage (month_key, status)
   `);
+  await pool.query("alter table if exists public.leadership_report_usage add column if not exists source_env text not null default 'prod'");
+  await pool.query("create index if not exists leadership_report_usage_env_month_status_idx on public.leadership_report_usage (source_env, month_key, status)");
 }
 
 async function getLeadershipQuota() {
@@ -424,8 +433,8 @@ async function getLeadershipQuota() {
   const limit = leadershipMonthlyLimit();
   const monthKey = leadershipMonthKey();
   const { rows } = await pool.query(
-    "select count(*)::integer as used from public.leadership_report_usage where month_key = $1 and status = 'success'",
-    [monthKey]
+    "select count(*)::integer as used from public.leadership_report_usage where month_key = $1 and source_env = $2 and status = 'success'",
+    [monthKey, envTag()]
   );
   const used = Number(rows[0]?.used || 0);
   return { limit, used, remaining: Math.max(limit - used, 0), monthKey };
@@ -436,9 +445,9 @@ async function recordLeadershipUsage(req, section, range, remaining) {
   const { rows } = await pool.query(
     `
     insert into public.leadership_report_usage (
-      month_key, section, username, user_id, period, status, remaining_count
+      month_key, section, username, user_id, period, source_env, status, remaining_count
     )
-    values ($1, $2, $3, $4, $5, 'success', $6)
+    values ($1, $2, $3, $4, $5, $6, 'success', $7)
     returning usage_id
     `,
     [
@@ -447,6 +456,7 @@ async function recordLeadershipUsage(req, section, range, remaining) {
       user.username || user.displayName || null,
       user.userId ? String(user.userId) : null,
       range?.period || null,
+      envTag(),
       remaining
     ]
   );
@@ -472,7 +482,7 @@ function leadershipTtlSeconds(section) {
 }
 
 function leadershipCacheKey(section, range) {
-  return ["v5", section, range?.period || "", range?.start || "", range?.end || ""].join("|");
+  return ["v6", APP_ENV, section, range?.period || "", range?.start || "", range?.end || ""].join("|");
 }
 
 async function ensureLeadershipSnapshotTable() {
@@ -748,7 +758,7 @@ function tableConfig(moduleKey) {
       optionalCreateFields: ["employee_id"]
     }
   };
-  return map[moduleKey] || null;
+  return envScopedConfig(map[moduleKey] || null);
 }
 
 const tableColumnCache = new Map();
@@ -770,11 +780,11 @@ async function tableColumns(tableName) {
 async function effectiveTableConfig(cfg) {
   if (!cfg || (!cfg.optionalColumns && !cfg.optionalCreateFields)) return cfg;
   const existing = await tableColumns(cfg.table);
-  return {
+  return envScopedConfig({
     ...cfg,
     columns: [...cfg.columns, ...(cfg.optionalColumns || []).filter((c) => existing.has(c))],
     createFields: [...cfg.createFields, ...(cfg.optionalCreateFields || []).filter((c) => existing.has(c))]
-  };
+  });
 }
 
 let hrSchemaReady = null;
@@ -876,8 +886,11 @@ function nextId(prefix) {
 }
 
 async function nextSequentialId(client, tableName, idColumn, prefix, width) {
-  const sql = `select ${idColumn} as id from ${tableName}`;
-  const { rows } = await client.query(sql);
+  const params = [];
+  const envSql = isEnvScopedTable(tableName) ? " where source_env = $1" : "";
+  if (envSql) params.push(envTag());
+  const sql = `select ${idColumn} as id from ${tableName}${envSql}`;
+  const { rows } = await client.query(sql, params);
   let max = 0;
   const re = new RegExp(`^${prefix}(\\d+)$`, "i");
   rows.forEach((row) => {
@@ -904,8 +917,8 @@ function saleDateToken(value) {
 async function nextSaleEntryId(client, saleDate) {
   const prefix = `SE-${saleDateToken(saleDate)}-`;
   const { rows } = await client.query(
-    "select sale_entry_id from public.sales_entries where sale_entry_id like $1",
-    [`${prefix}%`]
+    "select sale_entry_id from public.sales_entries where sale_entry_id like $1 and source_env = $2",
+    [`${prefix}%`, envTag()]
   );
   let max = 0;
   rows.forEach((row) => {
@@ -1452,7 +1465,7 @@ function liveModuleConfig(moduleKey) {
       actorMode: "entered_by"
     }
   };
-  return map[moduleKey] || null;
+  return envScopedConfig(map[moduleKey] || null);
 }
 
 function coerceLiveValue(value) {
@@ -1467,7 +1480,8 @@ function customerAccountValue(payload, ...keys) {
   return "";
 }
 
-function customerSelectSql(whereSql = "") {
+function customerSelectSql(whereSql = "", envParamIndex = 1) {
+  const envSql = whereSql ? `${whereSql} and ${envWhereSql("c", envParamIndex)}` : `where ${envWhereSql("c", envParamIndex)}`;
   return `
     select
       c.cid,
@@ -1493,16 +1507,17 @@ function customerSelectSql(whereSql = "") {
     left join lateral (
       select a.*
       from public.accounts a
-      where a.aid = c.aid or a.cid = c.cid
+      where (a.aid = c.aid or a.cid = c.cid)
+        and a.source_env = c.source_env
       order by case when a.aid = c.aid then 0 else 1 end
       limit 1
     ) a on true
-    ${whereSql}
+    ${envSql}
   `;
 }
 
 async function queryCustomerById(client, customerId) {
-  const { rows } = await client.query(`${customerSelectSql("where c.cid = $1")} limit 1`, [customerId]);
+  const { rows } = await client.query(`${customerSelectSql("where c.cid = $1", 2)} limit 1`, [customerId, envTag()]);
   return rows[0] || null;
 }
 
@@ -1515,8 +1530,9 @@ async function listCustomersWithAccounts() {
         0::numeric as amount_total,
         count(*) filter (where created_at >= date_trunc('month', current_date))::integer as month_count
       from public.contacts
-    `),
-    pool.query(`${customerSelectSql()} order by c.created_at desc nulls last, c.cid desc limit 100`)
+      where source_env = $1
+    `, [envTag()]),
+    pool.query(`${customerSelectSql()} order by c.created_at desc nulls last, c.cid desc limit 100`, [envTag()])
   ]);
   return { summary: summary.rows[0], rows: list.rows };
 }
@@ -1743,6 +1759,7 @@ app.get("/api/home", requireAuth, async (req, res) => {
              source_type, source_id, source_label, notes, created_by_name, completed_at
       from public.tasks
       where coalesce(status, 'Open') <> 'Completed'
+        and source_env = $2
         and (assigned_user_id is null or assigned_user_id = $1 or created_by_user_id = $1)
       order by due_date asc, created_at desc
       limit 200
@@ -1751,13 +1768,14 @@ app.get("/api/home", requireAuth, async (req, res) => {
       select lid, name, company, mobile, city, follow_up_date::text as follow_up_date, lead_status, assigned_to, notes
       from public.leads
       where follow_up_date is not null
+        and source_env = $1
         and coalesce(lead_status, '') not in ('Converted', 'Lost')
       order by follow_up_date asc
       limit 200
     `;
     const [tasksRes, leadsRes] = await Promise.all([
-      pool.query(tasksSql, [userId]),
-      modulePermission(req, "leads", "view") || isSuperAdmin(req) ? pool.query(leadSql) : Promise.resolve({ rows: [] })
+      pool.query(tasksSql, [userId, envTag()]),
+      modulePermission(req, "leads", "view") || isSuperAdmin(req) ? pool.query(leadSql, [envTag()]) : Promise.resolve({ rows: [] })
     ]);
     const leadTasks = (leadsRes.rows || []).map((row) => ({
       taskId: `LEAD-${row.lid}`,
@@ -1792,11 +1810,12 @@ app.get("/api/tasks", requireAuth, async (req, res) => {
       select task_id, title, due_date::text as due_date, status, priority, assigned_user_id,
              source_type, source_id, source_label, notes, created_by_name, completed_at
       from public.tasks
-      where assigned_user_id is null or assigned_user_id = $1 or created_by_user_id = $1
+      where source_env = $2
+        and (assigned_user_id is null or assigned_user_id = $1 or created_by_user_id = $1)
       order by due_date asc, created_at desc
       limit 300
       `,
-      [userId]
+      [userId, envTag()]
     );
     res.json({ tasks: rows.map(normalizeTaskRow) });
   } catch (error) {
@@ -1867,6 +1886,7 @@ app.put("/api/tasks/:taskId", requireAuth, async (req, res) => {
           updated_by_user_id = $7,
           updated_by_name = $8
       where task_id = $1
+        and source_env = $10
         and (created_by_user_id = $7 or assigned_user_id = $7 or $9 = true)
       returning task_id, title, due_date::text as due_date, status, priority, assigned_user_id,
                 source_type, source_id, source_label, notes, created_by_name, completed_at
@@ -1880,7 +1900,8 @@ app.put("/api/tasks/:taskId", requireAuth, async (req, res) => {
         req.body?.notes || null,
         actorUserId,
         actorName,
-        isSuperAdmin(req)
+        isSuperAdmin(req),
+        envTag()
       ]
     );
     if (!rows[0]) return res.status(404).json({ error: "Task not found" });
@@ -1904,11 +1925,12 @@ app.post("/api/tasks/:taskId/complete", requireAuth, async (req, res) => {
           updated_by_user_id = $2,
           updated_by_name = $3
       where task_id = $1
+        and source_env = $5
         and (created_by_user_id = $2 or assigned_user_id = $2 or $4 = true)
       returning task_id, title, due_date::text as due_date, status, priority, assigned_user_id,
                 source_type, source_id, source_label, notes, created_by_name, completed_at
       `,
-      [taskId, actorUserId, actorName, isSuperAdmin(req)]
+      [taskId, actorUserId, actorName, isSuperAdmin(req), envTag()]
     );
     if (!rows[0]) return res.status(404).json({ error: "Task not found" });
     res.json({ success: true, task: normalizeTaskRow(rows[0]) });
@@ -2290,19 +2312,21 @@ app.get("/api/sales/entries", requireAuth, async (req, res) => {
       left join public.contacts c on c.cid = s.cid
       left join lateral (
         select a.*
-        from public.accounts a
-        where a.aid = s.aid
+      from public.accounts a
+      where a.source_env = s.source_env
+        and (a.aid = s.aid
            or a.aid = c.aid
-           or a.cid = s.cid
+           or a.cid = s.cid)
         order by case when a.aid = s.aid then 0 when a.aid = c.aid then 1 else 2 end
         limit 1
       ) a on true
-      left join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id
+      left join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id and l.source_env = s.source_env
+      where s.source_env = $1
       group by s.sale_entry_id
       order by s.sale_date desc nulls last, s.created_at desc
       limit 300
     `;
-    const { rows } = await pool.query(sql);
+    const { rows } = await pool.query(sql, [envTag()]);
     res.json({ rows });
   } catch (error) {
     res.status(500).json({ error: clientSafeError(error) });
@@ -2421,6 +2445,7 @@ app.put("/api/sales/entries/:saleEntryId", requireAuth, async (req, res) => {
           updated_by_user_id = $11,
           updated_by_name = $12
       where sale_entry_id = $1
+        and source_env = $13
       `,
       [
         saleEntryId,
@@ -2434,10 +2459,11 @@ app.put("/api/sales/entries/:saleEntryId", requireAuth, async (req, res) => {
         payload.note || null,
         total,
         actorUserId,
-        actorName
+        actorName,
+        envTag()
       ]
     );
-    await client.query("delete from public.sales_line_items where sale_entry_id = $1", [saleEntryId]);
+    await client.query("delete from public.sales_line_items where sale_entry_id = $1 and source_env = $2", [saleEntryId, envTag()]);
     for (const line of lines) {
       await client.query(
         `
@@ -2486,8 +2512,8 @@ app.delete("/api/sales/entries/:saleEntryId", requireAuth, async (req, res) => {
     const saleEntryId = String(req.params.saleEntryId || "").trim();
     if (!saleEntryId) return res.status(400).json({ error: "saleEntryId is required" });
     await client.query("begin");
-    await client.query("delete from public.sales_line_items where sale_entry_id = $1", [saleEntryId]);
-    const { rowCount } = await client.query("delete from public.sales_entries where sale_entry_id = $1", [saleEntryId]);
+    await client.query("delete from public.sales_line_items where sale_entry_id = $1 and source_env = $2", [saleEntryId, envTag()]);
+    const { rowCount } = await client.query("delete from public.sales_entries where sale_entry_id = $1 and source_env = $2", [saleEntryId, envTag()]);
     if (!rowCount) {
       await client.query("rollback");
       return res.status(404).json({ error: "Sale entry not found" });
@@ -2989,7 +3015,7 @@ app.delete("/api/mdm/material-subtypes/:subtypeId", requireAuth, async (req, res
   try {
     if (!mdmPermission(req, "delete")) return res.status(403).json({ error: "Forbidden" });
     const subtypeId = String(req.params.subtypeId || "").trim();
-    const referenced = await pool.query("select purchase_id from public.material_purchases where subtype_id = $1 limit 1", [subtypeId]);
+    const referenced = await pool.query("select purchase_id from public.material_purchases where subtype_id = $1 and source_env = $2 limit 1", [subtypeId, envTag()]);
     if (referenced.rows.length) return res.status(409).json({ error: "Cannot delete: purchases reference this subtype." });
     const { rowCount } = await pool.query("delete from public.material_subtypes where subtype_id = $1", [subtypeId]);
     if (!rowCount) return res.status(404).json({ error: "Subtype not found." });
@@ -3093,7 +3119,7 @@ app.delete("/api/mdm/materials/:materialId", requireAuth, async (req, res) => {
   try {
     if (!mdmPermission(req, "delete")) return res.status(403).json({ error: "Forbidden" });
     const materialId = String(req.params.materialId || "").trim();
-    const referenced = await pool.query("select purchase_id from public.material_purchases where material_id = $1 limit 1", [materialId]);
+    const referenced = await pool.query("select purchase_id from public.material_purchases where material_id = $1 and source_env = $2 limit 1", [materialId, envTag()]);
     if (referenced.rows.length) return res.status(409).json({ error: "Cannot delete: purchases reference this material." });
     const { rowCount } = await pool.query("delete from public.materials where material_id = $1", [materialId]);
     if (!rowCount) return res.status(404).json({ error: "Material not found." });
@@ -3115,15 +3141,17 @@ app.get("/api/mm/initial", requireAuth, async (req, res) => {
                material_subtype, subtype_id, total_qty, total_kg, blanks_per_kg,
                cost_per_kg, total_amount, notes
         from public.material_purchases
+        where source_env = $1
         order by purchase_date desc nulls last, purchase_id desc
         limit 500
-      `) : Promise.resolve({ rows: [] }),
+      `, [envTag()]) : Promise.resolve({ rows: [] }),
       canViewPayments ? pool.query(`
         select payment_id, payment_date, vendor_id, vendor_name_snapshot, amount, payment_method, notes
         from public.vendor_payments
+        where source_env = $1
         order by payment_date desc nulls last, payment_id desc
         limit 500
-      `) : Promise.resolve({ rows: [] }),
+      `, [envTag()]) : Promise.resolve({ rows: [] }),
       pool.query("select vendor_id, vendor_name, contact, notes from public.vendors order by vendor_name asc, vendor_id asc"),
       pool.query("select material_id, material_name, material_type, type_id, notes from public.materials order by material_name asc, material_id asc"),
       pool.query("select subtype_id, subtype_name from public.material_subtypes order by subtype_name asc, subtype_id asc")
@@ -3289,13 +3317,13 @@ app.put("/api/mm/purchases/:purchaseId", requireAuth, async (req, res) => {
           material_subtype=$10, subtype_id=$11, total_qty=$12, total_kg=$13,
           blanks_per_kg=$14, cost_per_kg=$15, total_amount=$16, notes=$17,
           last_edited_by_user_id=$18, updated_by_user_id=$18, updated_by_name=$19
-      where purchase_id=$1
+      where purchase_id=$1 and source_env=$20
       returning purchase_id, trip_id, purchase_date, vendor_id, vendor_name_snapshot,
         material_id, material_name_snapshot, material_type, type_id,
         material_subtype, subtype_id, total_qty, total_kg, blanks_per_kg,
         cost_per_kg, total_amount, notes
       `,
-      [purchaseId, p.tripId || "", p.date || null, p.vendorId || null, p.vendorName || "", p.materialId || null, p.materialName || "", p.materialType || "", p.typeId || null, p.materialSubtype || "", p.subtypeId || null, totalQty, totalKg, Number(p.blanksPerKg || 0), costPerKg, totalAmount, p.notes || "", req.sessionData.user.userId, req.sessionData.user.displayName]
+      [purchaseId, p.tripId || "", p.date || null, p.vendorId || null, p.vendorName || "", p.materialId || null, p.materialName || "", p.materialType || "", p.typeId || null, p.materialSubtype || "", p.subtypeId || null, totalQty, totalKg, Number(p.blanksPerKg || 0), costPerKg, totalAmount, p.notes || "", req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
     );
     if (!rows.length) return res.status(404).json({ error: "Purchase not found." });
     res.json({ success: true, purchase: normalizePurchase(rows[0]) });
@@ -3307,7 +3335,7 @@ app.put("/api/mm/purchases/:purchaseId", requireAuth, async (req, res) => {
 app.delete("/api/mm/purchases/:purchaseId", requireAuth, async (req, res) => {
   try {
     if (!modulePermission(req, "purchases", "delete")) return res.status(403).json({ error: "Forbidden" });
-    const { rowCount } = await pool.query("delete from public.material_purchases where purchase_id = $1", [String(req.params.purchaseId || "").trim()]);
+    const { rowCount } = await pool.query("delete from public.material_purchases where purchase_id = $1 and source_env = $2", [String(req.params.purchaseId || "").trim(), envTag()]);
     if (!rowCount) return res.status(404).json({ error: "Purchase not found." });
     res.json({ success: true });
   } catch (error) {
@@ -3364,10 +3392,10 @@ app.put("/api/mm/vendor-payments/:paymentId", requireAuth, async (req, res) => {
       set payment_date=$2::date, vendor_id=$3, vendor_name_snapshot=$4,
           amount=$5, payment_method=$6, notes=$7,
           last_edited_by_user_id=$8, updated_by_user_id=$8, updated_by_name=$9
-      where payment_id=$1
+      where payment_id=$1 and source_env=$10
       returning payment_id, payment_date, vendor_id, vendor_name_snapshot, amount, payment_method, notes
       `,
-      [String(req.params.paymentId || "").trim(), p.date || null, p.vendorId || null, p.vendorName || "", Number(p.amount || 0), p.paymentMethod || "", p.notes || "", req.sessionData.user.userId, req.sessionData.user.displayName]
+      [String(req.params.paymentId || "").trim(), p.date || null, p.vendorId || null, p.vendorName || "", Number(p.amount || 0), p.paymentMethod || "", p.notes || "", req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
     );
     if (!rows.length) return res.status(404).json({ error: "Payment not found." });
     res.json({ success: true, payment: normalizeVendorPayment(rows[0]) });
@@ -3379,7 +3407,7 @@ app.put("/api/mm/vendor-payments/:paymentId", requireAuth, async (req, res) => {
 app.delete("/api/mm/vendor-payments/:paymentId", requireAuth, async (req, res) => {
   try {
     if (!modulePermission(req, "vendor_payments", "delete")) return res.status(403).json({ error: "Forbidden" });
-    const { rowCount } = await pool.query("delete from public.vendor_payments where payment_id = $1", [String(req.params.paymentId || "").trim()]);
+    const { rowCount } = await pool.query("delete from public.vendor_payments where payment_id = $1 and source_env = $2", [String(req.params.paymentId || "").trim(), envTag()]);
     if (!rowCount) return res.status(404).json({ error: "Payment not found." });
     res.json({ success: true });
   } catch (error) {
@@ -3399,17 +3427,19 @@ app.get("/api/pm/initial", requireAuth, async (req, res) => {
                packets_qty, box_qty, total_cups, operator_name_snapshot, operator_id,
                machine_name_snapshot, machine_id, shift, status, notes
         from public.productions
+        where source_env = $1
         order by production_date desc nulls last, prod_id desc
         limit 500
-      `) : Promise.resolve({ rows: [] }),
+      `, [envTag()]) : Promise.resolve({ rows: [] }),
       canUsage ? pool.query(`
         select usage_id, prod_id, usage_date, material_name_snapshot, material_type,
                material_id, qty_used, unit, operator_name_snapshot, operator_id,
                machine_name_snapshot, machine_id, shift, notes
         from public.material_usage
+        where source_env = $1
         order by usage_date desc nulls last, usage_id desc
         limit 500
-      `) : Promise.resolve({ rows: [] }),
+      `, [envTag()]) : Promise.resolve({ rows: [] }),
       canStock ? pool.query(`
         select stock_id, material_id, material_name_snapshot, material_type,
                opening_stock, closing_stock, unit, stock_date, notes
@@ -3560,12 +3590,12 @@ app.put("/api/pm/productions/:productionId", requireAuth, async (req, res) => {
           packets_qty=$5, box_qty=$6, total_cups=$7, operator_name_snapshot=$8,
           operator_id=$9, machine_name_snapshot=$10, machine_id=$11, shift=$12,
           status=$13, notes=$14, updated_by_user_id=$15, updated_by_name=$16
-      where prod_id=$1
+      where prod_id=$1 and source_env=$17
       returning prod_id, production_date, product_name_snapshot, cups_per_packet,
         packets_qty, box_qty, total_cups, operator_name_snapshot, operator_id,
         machine_name_snapshot, machine_id, shift, status, notes
       `,
-      [String(req.params.productionId || "").trim(), p.date || null, p.productName || "", cupsPerPacket, packetsQty, boxQty, totalCups, operatorRef.operatorName, operatorRef.operatorId, machineRef.machineName, machineRef.machineId, p.shift || "", p.status || "Completed", p.notes || "", req.sessionData.user.userId, req.sessionData.user.displayName]
+      [String(req.params.productionId || "").trim(), p.date || null, p.productName || "", cupsPerPacket, packetsQty, boxQty, totalCups, operatorRef.operatorName, operatorRef.operatorId, machineRef.machineName, machineRef.machineId, p.shift || "", p.status || "Completed", p.notes || "", req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
     );
     if (!rows.length) return res.status(404).json({ error: "Production record not found." });
     res.json({ success: true, production: normalizeProduction(rows[0]) });
@@ -3577,7 +3607,7 @@ app.put("/api/pm/productions/:productionId", requireAuth, async (req, res) => {
 app.delete("/api/pm/productions/:productionId", requireAuth, async (req, res) => {
   try {
     if (!modulePermission(req, "production", "delete")) return res.status(403).json({ error: "Forbidden" });
-    const { rowCount } = await pool.query("delete from public.productions where prod_id = $1", [String(req.params.productionId || "").trim()]);
+    const { rowCount } = await pool.query("delete from public.productions where prod_id = $1 and source_env = $2", [String(req.params.productionId || "").trim(), envTag()]);
     if (!rowCount) return res.status(404).json({ error: "Production record not found." });
     res.json({ success: true });
   } catch (error) {
@@ -3703,12 +3733,12 @@ app.put("/api/pm/material-usage/:usageId", requireAuth, async (req, res) => {
           operator_name_snapshot=$9, operator_id=$10,
           machine_name_snapshot=$11, machine_id=$12, shift=$13, notes=$14,
           updated_by_user_id=$15, updated_by_name=$16
-      where usage_id=$1
+      where usage_id=$1 and source_env=$17
       returning usage_id, prod_id, usage_date, material_name_snapshot, material_type,
         material_id, qty_used, unit, operator_name_snapshot, operator_id,
         machine_name_snapshot, machine_id, shift, notes
       `,
-      [String(req.params.usageId || "").trim(), u.productionId || "", u.date || null, u.materialName || "", u.materialType || "", String(u.materialId || "").trim() || null, Number(u.qtyUsed || 0), u.unit || "KG", operatorRef.operatorName, operatorRef.operatorId, machineRef.machineName, machineRef.machineId, u.shift || "", u.notes || "", req.sessionData.user.userId, req.sessionData.user.displayName]
+      [String(req.params.usageId || "").trim(), u.productionId || "", u.date || null, u.materialName || "", u.materialType || "", String(u.materialId || "").trim() || null, Number(u.qtyUsed || 0), u.unit || "KG", operatorRef.operatorName, operatorRef.operatorId, machineRef.machineName, machineRef.machineId, u.shift || "", u.notes || "", req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
     );
     if (!rows.length) return res.status(404).json({ error: "Usage record not found." });
     res.json({ success: true, usage: normalizeMaterialUsage(rows[0]) });
@@ -3720,7 +3750,7 @@ app.put("/api/pm/material-usage/:usageId", requireAuth, async (req, res) => {
 app.delete("/api/pm/material-usage/:usageId", requireAuth, async (req, res) => {
   try {
     if (!modulePermission(req, "material_usage", "delete")) return res.status(403).json({ error: "Forbidden" });
-    const { rowCount } = await pool.query("delete from public.material_usage where usage_id = $1", [String(req.params.usageId || "").trim()]);
+    const { rowCount } = await pool.query("delete from public.material_usage where usage_id = $1 and source_env = $2", [String(req.params.usageId || "").trim(), envTag()]);
     if (!rowCount) return res.status(404).json({ error: "Usage record not found." });
     res.json({ success: true });
   } catch (error) {
@@ -4156,14 +4186,17 @@ app.get("/api/dashboard/summary", requireAuth, async (req, res) => {
       if (!cfg) return;
       const amountSql = cfg.amountField ? `coalesce(sum(${cfg.amountField}), 0)::numeric as amount_total,` : "0::numeric as amount_total,";
       const datePredicate = cfg.dateField ? `count(*) filter (where ${cfg.dateField} >= date_trunc('month', current_date))::integer as month_count` : "0::integer as month_count";
+      const whereSql = cfg.envScoped ? "where source_env = $1" : "";
+      const params = cfg.envScoped ? [envTag()] : [];
       const sql = `
         select
           count(*)::integer as total_count,
           ${amountSql}
           ${datePredicate}
         from ${cfg.table}
+        ${whereSql}
       `;
-      const { rows } = await pool.query(sql);
+      const { rows } = await pool.query(sql, params);
       results[moduleKey] = rows[0] || { total_count: 0, amount_total: 0, month_count: 0 };
     }));
     res.json({ modules: results });
@@ -4189,7 +4222,13 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
     const section = normalizeLeadershipSection(req.params.section);
     const range = leadershipDateRange(req.query);
     const params = [range.start, range.end];
-    const inRange = (field) => `${field} between $1::date and $2::date`;
+    const inRange = (field) => {
+      const raw = String(field || "");
+      const alias = raw.includes(".") ? raw.split(".")[0] : "";
+      const envTarget = alias || "source_env";
+      const envPredicate = alias ? `${envTarget}.source_env = '${APP_ENV}'` : `${envTarget} = '${APP_ENV}'`;
+      return `${raw} between $1::date and $2::date and ${envPredicate}`;
+    };
     const ttlSeconds = leadershipTtlSeconds(section);
     const cacheKey = leadershipCacheKey(section, range);
     const forceRefresh = String(req.query.force || "") === "1";
@@ -4319,7 +4358,7 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                coalesce(sum(l.total_amount), 0)::numeric as revenue,
                count(distinct s.sale_entry_id)::integer as orders
         from public.sales_entries s
-        left join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id
+        left join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id and l.source_env = s.source_env
         where ${inRange("s.sale_date")}
         group by 1, 2
         order by 1 asc
@@ -4336,7 +4375,7 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                coalesce(sum(l.box_quantity), 0)::numeric as boxes,
                coalesce(sum(l.total_amount), 0)::numeric as revenue
         from public.sales_entries s
-        left join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id
+        left join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id and l.source_env = s.source_env
         where ${inRange("s.sale_date")}
         group by 1, 2, 3
         order by 3 desc, revenue desc
@@ -4366,7 +4405,7 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                  end), 0)::numeric as units,
                  count(*)::integer as lines
           from public.sales_entries s
-          join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id
+          join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id and l.source_env = s.source_env
           where ${inRange("s.sale_date")}
           group by 1
           order by revenue desc
@@ -4377,7 +4416,7 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                  coalesce(sum(l.total_amount), 0)::numeric as revenue,
                  coalesce(sum(l.box_quantity), 0)::numeric as boxes
           from public.sales_entries s
-          left join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id
+          left join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id and l.source_env = s.source_env
           where ${inRange("s.sale_date")}
           group by s.sale_date
           order by s.sale_date asc
@@ -4415,12 +4454,14 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                  max(customer_name_snapshot) as customer_name,
                  sum(coalesce(total_amount, 0)) as total_sales
           from public.sales_entries
+          where source_env = '${APP_ENV}'
           group by cid, coalesce(company_name_snapshot, 'Unknown')
         ),
         payment_totals as (
           select cid, coalesce(company_name_snapshot, 'Unknown') as company_name,
                  sum(coalesce(amount_paid, 0)) as total_paid
           from public.customer_payments
+          where source_env = '${APP_ENV}'
           group by cid, coalesce(company_name_snapshot, 'Unknown')
         ),
         due_rows as (
@@ -4428,7 +4469,7 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                  (coalesce(s.total_sales, 0) - coalesce(p.total_paid, 0))::numeric as balance
           from sales_totals s
           full outer join payment_totals p on p.cid = s.cid and p.company_name = s.company_name
-          left join public.contacts c on c.cid = coalesce(s.cid, p.cid)
+          left join public.contacts c on c.cid = coalesce(s.cid, p.cid) and c.source_env = '${APP_ENV}'
         )
         select customer,
                balance,
@@ -4570,7 +4611,7 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
             (select coalesce(sum(box_qty), 0) from public.productions where ${inRange("production_date")})::numeric as produced,
             (select coalesce(sum(l.box_quantity), 0)
              from public.sales_entries s
-             join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id
+             join public.sales_line_items l on l.sale_entry_id = s.sale_entry_id and l.source_env = s.source_env
              where ${inRange("s.sale_date")})::numeric as sold
         `, params),
         pool.query(`
@@ -4588,6 +4629,7 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                  coalesce(l.package_qty, 0)::numeric as package_qty,
                  coalesce(sum(l.box_quantity), 0)::numeric as sold_boxes
           from public.sales_line_items l
+          where l.source_env = '${APP_ENV}'
           group by coalesce(l.product_id, l.product_name_snapshot), coalesce(l.package_qty, 0)
         )
         select coalesce(p.product, s.product) as product,
@@ -4624,6 +4666,7 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                  max(coalesce(material_type, '')) as type,
                  coalesce(sum(total_qty), 0)::numeric as purchased_qty
           from public.material_purchases
+          where source_env = '${APP_ENV}'
           group by coalesce(material_id, material_name_snapshot)
         ),
         used as (
@@ -4633,6 +4676,7 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                  max(coalesce(unit, '')) as unit,
                  coalesce(sum(qty_used), 0)::numeric as used_qty
           from public.material_usage
+          where source_env = '${APP_ENV}'
           group by coalesce(material_id, material_name_snapshot)
         )
         select coalesce(p.material, u.material) as material,
@@ -4663,10 +4707,10 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
     if (section === "leads") {
       if (sectionForbidden(req, ["leads"])) return res.status(403).json({ error: "Forbidden" });
       const [summary, status, source, followups] = await Promise.all([
-        pool.query("select count(*)::integer as total, count(*) filter (where lead_status = 'Converted')::integer as converted, count(*) filter (where lead_status = 'Hot')::integer as hot from public.leads"),
-        pool.query("select coalesce(lead_status, 'Cold') as name, count(*)::integer as count from public.leads group by 1 order by count desc"),
-        pool.query("select coalesce(source, 'Unknown') as name, count(*)::integer as count from public.leads group by 1 order by count desc limit 10"),
-        pool.query("select lid, company, follow_up_date::text as follow_up_date, lead_status from public.leads where follow_up_date is not null and coalesce(lead_status, '') not in ('Converted', 'Lost') and follow_up_date <= current_date order by follow_up_date asc limit 20")
+        pool.query("select count(*)::integer as total, count(*) filter (where lead_status = 'Converted')::integer as converted, count(*) filter (where lead_status = 'Hot')::integer as hot from public.leads where source_env = $1", [envTag()]),
+        pool.query("select coalesce(lead_status, 'Cold') as name, count(*)::integer as count from public.leads where source_env = $1 group by 1 order by count desc", [envTag()]),
+        pool.query("select coalesce(source, 'Unknown') as name, count(*)::integer as count from public.leads where source_env = $1 group by 1 order by count desc limit 10", [envTag()]),
+        pool.query("select lid, company, follow_up_date::text as follow_up_date, lead_status from public.leads where source_env = $1 and follow_up_date is not null and coalesce(lead_status, '') not in ('Converted', 'Lost') and follow_up_date <= current_date order by follow_up_date asc limit 20", [envTag()])
       ]);
       const total = Number(summary.rows[0]?.total || 0);
       const converted = Number(summary.rows[0]?.converted || 0);
@@ -4709,22 +4753,26 @@ app.get("/api/live-module/:moduleKey", requireAuth, async (req, res) => {
       });
     }
     const amountSql = cfg.amountField ? `coalesce(sum(${cfg.amountField}), 0)::numeric as amount_total,` : "0::numeric as amount_total,";
+    const whereSql = cfg.envScoped ? "where source_env = $1" : "";
+    const queryParams = cfg.envScoped ? [envTag()] : [];
     const summarySql = `
       select
         count(*)::integer as total_count,
         ${amountSql}
         count(*) filter (where ${cfg.dateField} >= date_trunc('month', current_date))::integer as month_count
       from ${cfg.table}
+      ${whereSql}
     `;
     const listSql = `
       select ${cfg.columns.join(", ")}
       from ${cfg.table}
+      ${whereSql}
       order by ${cfg.dateField} desc nulls last, ${cfg.pk} desc
       limit 100
     `;
     const [summary, list] = await Promise.all([
-      pool.query(summarySql),
-      pool.query(listSql)
+      pool.query(summarySql, queryParams),
+      pool.query(listSql, queryParams)
     ]);
     res.json({
       config: {
@@ -4822,10 +4870,12 @@ app.put("/api/live-module/:moduleKey/:recordId", requireAuth, async (req, res) =
       ];
     }
 
+    const envFilter = cfg.envScoped ? ` and source_env = $${cfg.createFields.length + 4}` : "";
+    if (cfg.envScoped) values.push(envTag());
     const sql = `
       update ${cfg.table}
       set ${sets.join(", ")}
-      where ${cfg.pk} = $${cfg.createFields.length + 3}
+      where ${cfg.pk} = $${cfg.createFields.length + 3}${envFilter}
       returning ${cfg.columns.join(", ")}
     `;
     const { rows } = await pool.query(sql, values);
@@ -4843,8 +4893,8 @@ app.delete("/api/live-module/:moduleKey/:recordId", requireAuth, async (req, res
     if (!modulePermission(req, moduleKey, "delete")) return res.status(403).json({ error: "Forbidden" });
     const cfg = liveModuleConfig(moduleKey);
     if (!cfg) return res.status(404).json({ error: "Unknown live module" });
-    const sql = `delete from ${cfg.table} where ${cfg.pk} = $1`;
-    const { rowCount } = await pool.query(sql, [recordId]);
+    const sql = `delete from ${cfg.table} where ${cfg.pk} = $1${cfg.envScoped ? " and source_env = $2" : ""}`;
+    const { rowCount } = await pool.query(sql, cfg.envScoped ? [recordId, envTag()] : [recordId]);
     if (!rowCount) return res.status(404).json({ error: "Record not found" });
     res.json({ success: true });
   } catch (error) {
@@ -4862,10 +4912,11 @@ app.get("/api/module/:moduleKey", requireAuth, async (req, res) => {
     const sql = `
       select ${cfg.columns.join(", ")}
       from ${cfg.table}
+      ${cfg.envScoped ? "where source_env = $1" : ""}
       order by ${cfg.dateField} desc nulls last, ${cfg.pk} desc
       limit 300
     `;
-    const { rows } = await pool.query(sql);
+    const { rows } = await pool.query(sql, cfg.envScoped ? [envTag()] : []);
     res.json({ rows });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4890,6 +4941,10 @@ app.post("/api/module/:moduleKey", requireAuth, async (req, res) => {
     }
     const fields = [cfg.pk, ...cfg.createFields, "entered_by_user_id", "last_edited_by_user_id", "created_by_name", "updated_by_name"];
     const values = [recordId, ...cfg.createFields.map((f) => payload[f] ?? null), userId, userId, userName, userName];
+    if (cfg.envScoped) {
+      fields.push("source_env");
+      values.push(envTag());
+    }
     const params = values.map((_, i) => `$${i + 1}`).join(", ");
 
     const sql = `
@@ -4942,7 +4997,11 @@ app.post("/api/module/:moduleKey/bulk", requireAuth, async (req, res) => {
     for (const payload of prepared) {
       const recordId = nextId(idPrefix);
       const fields = [cfg.pk, ...cfg.createFields, "entered_by_user_id", "last_edited_by_user_id", "created_by_name", "updated_by_name"];
-      const values = [recordId, ...cfg.createFields.map((f) => payload[f] ?? null), userId, userId, userName, userName];
+    const values = [recordId, ...cfg.createFields.map((f) => payload[f] ?? null), userId, userId, userName, userName];
+    if (cfg.envScoped) {
+      fields.push("source_env");
+      values.push(envTag());
+    }
       const params = values.map((_, i) => `$${i + 1}`).join(", ");
       const sql = `
         insert into ${cfg.table} (${fields.join(", ")})
@@ -4980,10 +5039,12 @@ app.put("/api/module/:moduleKey/:recordId", requireAuth, async (req, res) => {
     sets.push(`last_edited_by_user_id = $${cfg.createFields.length + 1}`);
     sets.push(`updated_by_name = $${cfg.createFields.length + 2}`);
     const values = [...cfg.createFields.map((f) => payload[f] ?? null), userId, userName, recordId];
+    const envFilter = cfg.envScoped ? ` and source_env = $${cfg.createFields.length + 4}` : "";
+    if (cfg.envScoped) values.push(envTag());
     const sql = `
       update ${cfg.table}
       set ${sets.join(", ")}
-      where ${cfg.pk} = $${cfg.createFields.length + 3}
+      where ${cfg.pk} = $${cfg.createFields.length + 3}${envFilter}
       returning ${cfg.columns.join(", ")}
     `;
     const { rows } = await pool.query(sql, values);
@@ -5002,8 +5063,8 @@ app.delete("/api/module/:moduleKey/:recordId", requireAuth, async (req, res) => 
     const cfg = await effectiveTableConfig(tableConfig(moduleKey));
     if (!cfg) return res.status(404).json({ error: "Unknown module" });
     if (!modulePermission(req, moduleKey, "delete")) return res.status(403).json({ error: "Forbidden" });
-    const sql = `delete from ${cfg.table} where ${cfg.pk} = $1`;
-    await pool.query(sql, [recordId]);
+    const sql = `delete from ${cfg.table} where ${cfg.pk} = $1${cfg.envScoped ? " and source_env = $2" : ""}`;
+    await pool.query(sql, cfg.envScoped ? [recordId, envTag()] : [recordId]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
