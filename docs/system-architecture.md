@@ -11,18 +11,18 @@ Browser
   -> Supabase Postgres
 ```
 
-There is no frontend build step in the active app. In this production repository, the deployable app is promoted to the repository root so Vercel can deploy the root directory directly.
+There is no frontend build step in the active app. In this production repository, Vercel deploys the nested `webapp-restart` directory, matching the development repository shape.
 
 ## Runtime Components
 
 | Component | Location | Responsibility |
 | --- | --- | --- |
-| Express server | `server.js` | Static file serving, auth, sessions, permissions, APIs, report SQL |
-| HTML shell | `index.html` | Page containers, forms, navigation structure |
-| Frontend JS | `ui/app.js` | Routing, state, form logic, API calls, rendering |
-| Frontend CSS | `ui/app.css` | App visual design and responsive layout |
-| Assets | `assets/` | MCM logo and image assets |
-| Vercel config | `vercel.json` | Deployment behavior |
+| Express server | `webapp-restart/server.js` | Static file serving, auth, sessions, permissions, APIs, report SQL |
+| HTML shell | `webapp-restart/index.html` | Page containers, forms, navigation structure |
+| Frontend JS | `webapp-restart/ui/app.js` | Routing, state, form logic, API calls, rendering |
+| Frontend CSS | `webapp-restart/ui/app.css` | App visual design and responsive layout |
+| Assets | `webapp-restart/assets/` | MCM logo and image assets |
+| Vercel config | `webapp-restart/vercel.json` | Deployment behavior |
 | Database migrations | `supabase/migrations/` | Schema evolution |
 | Seed data | `supabase/seeds/` | Imported historical data and validation scripts |
 
@@ -203,7 +203,7 @@ These reduce duplicated code but require careful metadata, validation, and permi
 Vercel project root:
 
 ```text
-<repository root>
+webapp-restart
 ```
 
 Production environment variables:
@@ -276,7 +276,7 @@ Report queries should prefer grouped SQL aggregates over deriving totals from li
 
 ### Short Term
 
-1. Keep the repository root as the active production app.
+1. Keep `webapp-restart` as the active production app root.
 2. Create smoke tests for static assets and critical APIs.
 3. Add a developer checklist before every production deploy.
 4. Avoid broad refactors while active operational bugs are being fixed.

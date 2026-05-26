@@ -17,10 +17,7 @@ mcmEOS-Prod
 Important folders:
 
 ```text
-server.js         active Express app
-index.html        active app shell
-ui/               frontend logic and styles
-assets/           production app assets
+webapp-restart/   active app
 supabase/         migrations
 docs/             documentation
 ```
@@ -28,7 +25,7 @@ docs/             documentation
 Active deployable app root:
 
 ```text
-repository root
+webapp-restart
 ```
 
 ## Recommendation
@@ -132,11 +129,7 @@ git merge dev/main
 ### Keep in Production
 
 ```text
-server.js
-api/
-index.html
-ui/
-assets/
+webapp-restart/
 supabase/migrations/
 docs/
 README.md
@@ -160,7 +153,7 @@ large historical seed chunks not needed by runtime
 temporary logs
 ```
 
-The production repo should keep the deployable app at the repository root.
+The production repo should keep the deployable app in `webapp-restart/`, matching the development repository.
 
 ## Proposed Repository Layout Going Forward
 
@@ -184,11 +177,7 @@ mcmEOS-dev/
   full working tree, including experiments and migration helpers
 
 mcmEOS-prod/
-  server.js
-  api/
-  index.html
-  ui/
-  assets/
+  webapp-restart/
   supabase/migrations/
   docs/
 ```
@@ -241,8 +230,8 @@ Code separation is not enough. The databases must also be separated.
 
 Before promoting to production:
 
-- `node --check server.js`
-- `node --check ui/app.js`
+- `node --check webapp-restart/server.js`
+- `node --check webapp-restart/ui/app.js`
 - Start local app and verify `/`, `/ui/app.js`, `/ui/app.css`.
 - Test login with a non-admin user.
 - Test login with an admin user.
@@ -270,7 +259,7 @@ The safest sequence is:
 1. Create `mcmEOS-dev` and push the full current repository.
 2. Create `mcmEOS-prod`.
 3. Copy only approved production files using Git history, not manual file copy.
-4. Configure Vercel production to use the `mcmEOS-Prod` repository root.
+4. Configure Vercel production to use `mcmEOS-Prod/webapp-restart`.
 5. Lock production repository write access.
 6. Promote from dev to prod through reviewed pull requests or controlled Git merges.
 

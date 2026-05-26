@@ -23,10 +23,10 @@
 
 | Path | Purpose |
 | --- | --- |
-| `../server.js` | Active Express API/server |
-| `../index.html` | Active app shell |
-| `../ui/app.js` | Active frontend logic |
-| `../ui/app.css` | Active frontend styles |
+| `../webapp-restart/server.js` | Active Express API/server |
+| `../webapp-restart/index.html` | Active app shell |
+| `../webapp-restart/ui/app.js` | Active frontend logic |
+| `../webapp-restart/ui/app.css` | Active frontend styles |
 | `../supabase/migrations/` | Database schema migrations |
 
 ## Recommended Reading Order

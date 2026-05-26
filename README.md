@@ -2,12 +2,12 @@
 
 Clean production deployment repository for the MCM EOS web app.
 
-This repository contains the production application at the repository root so Vercel can deploy without a nested root directory.
+This repository mirrors the development repository shape: the deployable web app lives in `webapp-restart/`.
 
 ## Contents
 
-- `server.js`, `api/`, `index.html`, `ui/`, and `assets/`: production web app runtime
-- `db.js`: shared database pool helper and environment tagging utilities
+- `webapp-restart/server.js`, `webapp-restart/api/`, `webapp-restart/index.html`, `webapp-restart/ui/`, and `webapp-restart/assets/`: production web app runtime
+- `webapp-restart/db.js`: shared database pool helper and environment tagging utilities
 - `supabase/migrations/`: production database migrations
 - `docs/`: operational and architecture documentation
 - `server_migration_guide.md`: source environment migration notes
@@ -19,7 +19,7 @@ Configure Vercel with:
 ```text
 Git repo: mcmppdev/mcmEOS-Prod
 Branch: main
-Root Directory: <empty / repository root>
+Root Directory: webapp-restart
 Build Command: <empty>
 Install Command: npm install
 Output Directory: <empty>
@@ -45,6 +45,7 @@ Do not commit `.env` files or secrets.
 ## Local Smoke Test
 
 ```powershell
+cd webapp-restart
 npm install
 node --check server.js
 node --check ui/app.js
