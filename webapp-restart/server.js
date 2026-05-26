@@ -664,7 +664,7 @@ async function ensureAccountSchema() {
     await pool.query("create index if not exists idx_accounts_aid_cid on public.accounts(aid, cid)");
     await pool.query(`
       insert into public.accounts (
-        aid, cid, contact_name, company, account_status, mobile, city, state, address, zipcode, gst_number
+        aid, cid, contact_name, company, account_status, mobile, city, state, address, zipcode, gst_number, source_env
       )
       select
         coalesce(nullif(c.aid, ''), 'AID-' || regexp_replace(c.cid, '[^A-Za-z0-9]+', '-', 'g')),
@@ -677,10 +677,11 @@ async function ensureAccountSchema() {
         c.state,
         '',
         '',
-        ''
+        '',
+        c.source_env
       from public.contacts c
       where not exists (
-        select 1 from public.accounts a where a.aid = c.aid or a.cid = c.cid
+        select 1 from public.accounts a where (a.aid = c.aid or a.cid = c.cid) and a.source_env = c.source_env
       )
       on conflict (aid) do nothing
     `);
@@ -1555,9 +1556,9 @@ async function createCustomerWithAccount(req, payload) {
       `
       insert into public.contacts (
         cid, name, company, customer_type, mobile, city, state, contact_status, aid,
-        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $10, $11)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $10, $11, $12)
       `,
       [
         cid,
@@ -1570,16 +1571,17 @@ async function createCustomerWithAccount(req, payload) {
         contactStatus,
         aid,
         actorUserId,
-        actorName
+        actorName,
+        envTag()
       ]
     );
     await client.query(
       `
       insert into public.accounts (
         aid, cid, contact_name, company, account_status, mobile, city, state, address, zipcode, gst_number,
-        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $12, $13)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $12, $13, $14)
       `,
       [
         aid,
@@ -1594,7 +1596,8 @@ async function createCustomerWithAccount(req, payload) {
         customerAccountValue(payload, "account_zipcode", "zipcode") || null,
         customerAccountValue(payload, "account_gst_number", "gst_number") || null,
         actorUserId,
-        actorName
+        actorName,
+        envTag()
       ]
     );
     const row = await queryCustomerById(client, cid);
@@ -1638,6 +1641,7 @@ async function updateCustomerWithAccount(req, customerId, payload) {
           updated_by_user_id = $10,
           updated_by_name = $11
       where cid = $1
+        and source_env = $12
       `,
       [
         customerId,
@@ -1650,16 +1654,17 @@ async function updateCustomerWithAccount(req, customerId, payload) {
         contactStatus,
         aid,
         actorUserId,
-        actorName
+        actorName,
+        envTag()
       ]
     );
     await client.query(
       `
       insert into public.accounts (
         aid, cid, contact_name, company, account_status, mobile, city, state, address, zipcode, gst_number,
-        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $12, $13)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $12, $13, $14)
       on conflict (aid) do update
       set cid = excluded.cid,
           contact_name = excluded.contact_name,
@@ -1674,6 +1679,7 @@ async function updateCustomerWithAccount(req, customerId, payload) {
           updated_by_user_id = excluded.updated_by_user_id,
           updated_by_name = excluded.updated_by_name,
           updated_at = now()
+      where public.accounts.source_env = excluded.source_env
       `,
       [
         aid,
@@ -1688,7 +1694,8 @@ async function updateCustomerWithAccount(req, customerId, payload) {
         customerAccountValue(payload, "account_zipcode", "zipcode") || null,
         customerAccountValue(payload, "account_gst_number", "gst_number") || null,
         actorUserId,
-        actorName
+        actorName,
+        envTag()
       ]
     );
     const row = await queryCustomerById(client, customerId);
@@ -1837,9 +1844,9 @@ app.post("/api/tasks", requireAuth, async (req, res) => {
       `
       insert into public.tasks (
         task_id, title, due_date, status, priority, assigned_user_id, source_type, source_id, source_label, notes,
-        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
       )
-      values ($1, $2, $3::date, $4, $5, $6, $7, $8, $9, $10, $11, $12, $11, $12)
+      values ($1, $2, $3::date, $4, $5, $6, $7, $8, $9, $10, $11, $12, $11, $12, $13)
       returning task_id, title, due_date::text as due_date, status, priority, assigned_user_id,
                 source_type, source_id, source_label, notes, created_by_name, completed_at
       `,
@@ -1855,7 +1862,8 @@ app.post("/api/tasks", requireAuth, async (req, res) => {
         req.body?.sourceLabel || null,
         req.body?.notes || null,
         actorUserId,
-        actorName
+        actorName,
+        envTag()
       ]
     );
     res.json({ success: true, task: normalizeTaskRow(rows[0]) });
@@ -2352,9 +2360,9 @@ app.post("/api/sales/entries", requireAuth, async (req, res) => {
       `
       insert into public.sales_entries (
         sale_entry_id, sale_date, cid, aid, customer_name_snapshot, company_name_snapshot, customer_mobile_snapshot,
-        status, note, total_amount, created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+        status, note, total_amount, created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
       ) values (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $11, $12
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $11, $12, $13
       )
       `,
       [
@@ -2369,7 +2377,8 @@ app.post("/api/sales/entries", requireAuth, async (req, res) => {
         payload.note || null,
         total,
         actorUserId,
-        actorName
+        actorName,
+        envTag()
       ]
     );
 
@@ -2379,9 +2388,9 @@ app.post("/api/sales/entries", requireAuth, async (req, res) => {
         insert into public.sales_line_items (
           sale_line_id, sale_entry_id, product_id, price_id, packaging_type, product_name_snapshot,
           unit_price, package_qty, list_sale_packet_price, updated_list_sale_packet_price, sale_price_per_cup, source_product_id,
-          packets_quantity, box_quantity, total_amount
+          packets_quantity, box_quantity, total_amount, source_env
         ) values (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
         )
         `,
         [
@@ -2399,7 +2408,8 @@ app.post("/api/sales/entries", requireAuth, async (req, res) => {
           line.source_product_id || null,
           Number(line.packets_quantity || 0),
           Number(line.box_quantity || 0),
-          Number(line.total_amount || 0)
+          Number(line.total_amount || 0),
+          envTag()
         ]
       );
     }
@@ -2470,9 +2480,9 @@ app.put("/api/sales/entries/:saleEntryId", requireAuth, async (req, res) => {
         insert into public.sales_line_items (
           sale_line_id, sale_entry_id, product_id, price_id, packaging_type, product_name_snapshot,
           unit_price, package_qty, list_sale_packet_price, updated_list_sale_packet_price, sale_price_per_cup, source_product_id,
-          packets_quantity, box_quantity, total_amount
+          packets_quantity, box_quantity, total_amount, source_env
         ) values (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
         )
         `,
         [
@@ -2490,7 +2500,8 @@ app.put("/api/sales/entries/:saleEntryId", requireAuth, async (req, res) => {
           line.source_product_id || null,
           Number(line.packets_quantity || 0),
           Number(line.box_quantity || 0),
-          Number(line.total_amount || 0)
+          Number(line.total_amount || 0),
+          envTag()
         ]
       );
     }
@@ -3203,15 +3214,15 @@ app.post("/api/mm/purchases", requireAuth, async (req, res) => {
         material_subtype, subtype_id, total_qty, total_kg, blanks_per_kg,
         cost_per_kg, total_amount, notes,
         entered_by_user_id, last_edited_by_user_id,
-        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
       )
-      values ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,$18,$19,$18,$19)
+      values ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,$18,$19,$18,$19,$20)
       returning purchase_id, trip_id, purchase_date, vendor_id, vendor_name_snapshot,
         material_id, material_name_snapshot, material_type, type_id,
         material_subtype, subtype_id, total_qty, total_kg, blanks_per_kg,
         cost_per_kg, total_amount, notes
       `,
-      [purchaseId, tripId, date, vendorId, vendorName, materialId, materialName, materialType, typeId, materialSubtype, subtypeId, totalQty, totalKg, blanksPerKg, costPerKg, totalAmount, notes, req.sessionData.user.userId, req.sessionData.user.displayName]
+      [purchaseId, tripId, date, vendorId, vendorName, materialId, materialName, materialType, typeId, materialSubtype, subtypeId, totalQty, totalKg, blanksPerKg, costPerKg, totalAmount, notes, req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
     );
     await client.query("commit");
     res.json({ success: true, purchaseId, purchase: normalizePurchase(rows[0]) });
@@ -3278,15 +3289,15 @@ app.post("/api/mm/purchases/bulk", requireAuth, async (req, res) => {
           material_subtype, subtype_id, total_qty, total_kg, blanks_per_kg,
           cost_per_kg, total_amount, notes,
           entered_by_user_id, last_edited_by_user_id,
-          created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+          created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
         )
-        values ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,$18,$19,$18,$19)
+        values ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,$18,$19,$18,$19,$20)
         returning purchase_id, trip_id, purchase_date, vendor_id, vendor_name_snapshot,
           material_id, material_name_snapshot, material_type, type_id,
           material_subtype, subtype_id, total_qty, total_kg, blanks_per_kg,
           cost_per_kg, total_amount, notes
         `,
-        [ids[i], p.tripId, p.date, p.vendorId, p.vendorName, p.materialId, p.materialName, p.materialType, p.typeId, p.materialSubtype, p.subtypeId, p.totalQty, p.totalKg, p.blanksPerKg, p.costPerKg, p.totalAmount, p.notes, req.sessionData.user.userId, req.sessionData.user.displayName]
+        [ids[i], p.tripId, p.date, p.vendorId, p.vendorName, p.materialId, p.materialName, p.materialType, p.typeId, p.materialSubtype, p.subtypeId, p.totalQty, p.totalKg, p.blanksPerKg, p.costPerKg, p.totalAmount, p.notes, req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
       );
       created.push(normalizePurchase(rows[0]));
     }
@@ -3365,12 +3376,12 @@ app.post("/api/mm/vendor-payments", requireAuth, async (req, res) => {
       insert into public.vendor_payments (
         payment_id, payment_date, vendor_id, vendor_name_snapshot, amount, payment_method, notes,
         entered_by_user_id, last_edited_by_user_id,
-        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
       )
-      values ($1,$2::date,$3,$4,$5,$6,$7,$8,$8,$8,$9,$8,$9)
+      values ($1,$2::date,$3,$4,$5,$6,$7,$8,$8,$8,$9,$8,$9,$10)
       returning payment_id, payment_date, vendor_id, vendor_name_snapshot, amount, payment_method, notes
       `,
-      [paymentId, date, vendorId, vendorName, amount, paymentMethod, notes, req.sessionData.user.userId, req.sessionData.user.displayName]
+      [paymentId, date, vendorId, vendorName, amount, paymentMethod, notes, req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
     );
     await client.query("commit");
     res.json({ success: true, paymentId, payment: normalizeVendorPayment(rows[0]) });
@@ -3496,14 +3507,14 @@ app.post("/api/pm/productions", requireAuth, async (req, res) => {
         prod_id, production_date, product_name_snapshot, cups_per_packet,
         packets_qty, box_qty, total_cups, operator_name_snapshot, operator_id,
         machine_name_snapshot, machine_id, shift, status, notes,
-        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
       )
-      values ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$15,$16)
+      values ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$15,$16,$17)
       returning prod_id, production_date, product_name_snapshot, cups_per_packet,
         packets_qty, box_qty, total_cups, operator_name_snapshot, operator_id,
         machine_name_snapshot, machine_id, shift, status, notes
       `,
-      [productionId, date, productName, cupsPerPacket, packetsQty, boxQty, totalCups, operator, operatorRef.operatorId, machine, machineRef.machineId, shift, status, notes, req.sessionData.user.userId, req.sessionData.user.displayName]
+      [productionId, date, productName, cupsPerPacket, packetsQty, boxQty, totalCups, operator, operatorRef.operatorId, machine, machineRef.machineId, shift, status, notes, req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
     );
     await client.query("commit");
     res.json({ success: true, productionId, production: normalizeProduction(rows[0]) });
@@ -3552,14 +3563,14 @@ app.post("/api/pm/productions/bulk", requireAuth, async (req, res) => {
           prod_id, production_date, product_name_snapshot, cups_per_packet,
           packets_qty, box_qty, total_cups, operator_name_snapshot, operator_id,
           machine_name_snapshot, machine_id, shift, status, notes,
-          created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+          created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
         )
-        values ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$15,$16)
+        values ($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$15,$16,$17)
         returning prod_id, production_date, product_name_snapshot, cups_per_packet,
           packets_qty, box_qty, total_cups, operator_name_snapshot, operator_id,
           machine_name_snapshot, machine_id, shift, status, notes
         `,
-        [ids[i], p.date, p.productName, p.cupsPerPacket, p.packetsQty, p.boxQty, p.totalCups, p.operatorRef.operatorName, p.operatorRef.operatorId, p.machineRef.machineName, p.machineRef.machineId, p.shift, p.status, p.notes, req.sessionData.user.userId, req.sessionData.user.displayName]
+        [ids[i], p.date, p.productName, p.cupsPerPacket, p.packetsQty, p.boxQty, p.totalCups, p.operatorRef.operatorName, p.operatorRef.operatorId, p.machineRef.machineName, p.machineRef.machineId, p.shift, p.status, p.notes, req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
       );
       created.push(normalizeProduction(rows[0]));
     }
@@ -3643,14 +3654,14 @@ app.post("/api/pm/material-usage", requireAuth, async (req, res) => {
         usage_id, prod_id, usage_date, material_name_snapshot, material_type,
         material_id, qty_used, unit, operator_name_snapshot, operator_id,
         machine_name_snapshot, machine_id, shift, notes,
-        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+        created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
       )
-      values ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$14,$15)
+      values ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$15,$16,$17)
       returning usage_id, prod_id, usage_date, material_name_snapshot, material_type,
         material_id, qty_used, unit, operator_name_snapshot, operator_id,
         machine_name_snapshot, machine_id, shift, notes
       `,
-      [usageId, String(u.productionId || "").trim(), date, materialName, materialType, String(u.materialId || "").trim() || null, qtyUsed, unit, operator, operatorRef.operatorId, machine, machineRef.machineId, shift, notes, req.sessionData.user.userId, req.sessionData.user.displayName]
+      [usageId, String(u.productionId || "").trim(), date, materialName, materialType, String(u.materialId || "").trim() || null, qtyUsed, unit, operator, operatorRef.operatorId, machine, machineRef.machineId, shift, notes, req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
     );
     await client.query("commit");
     res.json({ success: true, usageId, usage: normalizeMaterialUsage(rows[0]) });
@@ -3698,14 +3709,14 @@ app.post("/api/pm/material-usage/bulk", requireAuth, async (req, res) => {
           usage_id, prod_id, usage_date, material_name_snapshot, material_type,
           material_id, qty_used, unit, operator_name_snapshot, operator_id,
           machine_name_snapshot, machine_id, shift, notes,
-          created_by_user_id, created_by_name, updated_by_user_id, updated_by_name
+          created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, source_env
         )
-        values ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$15,$16)
+        values ($1,$2,$3::date,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$15,$16,$17)
         returning usage_id, prod_id, usage_date, material_name_snapshot, material_type,
           material_id, qty_used, unit, operator_name_snapshot, operator_id,
           machine_name_snapshot, machine_id, shift, notes
         `,
-        [ids[i], u.productionId, u.date, u.materialName, u.materialType, u.materialId, u.qtyUsed, u.unit, u.operatorRef.operatorName, u.operatorRef.operatorId, u.machineRef.machineName, u.machineRef.machineId, u.shift, u.notes, req.sessionData.user.userId, req.sessionData.user.displayName]
+        [ids[i], u.productionId, u.date, u.materialName, u.materialType, u.materialId, u.qtyUsed, u.unit, u.operatorRef.operatorName, u.operatorRef.operatorId, u.machineRef.machineName, u.machineRef.machineId, u.shift, u.notes, req.sessionData.user.userId, req.sessionData.user.displayName, envTag()]
       );
       created.push(normalizeMaterialUsage(rows[0]));
     }
