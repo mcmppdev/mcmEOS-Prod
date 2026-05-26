@@ -11,18 +11,18 @@ Browser
   -> Supabase Postgres
 ```
 
-There is no frontend build step in the active app. Vercel can deploy `webapp-restart` directly as the project root.
+There is no frontend build step in the active app. In this production repository, the deployable app is promoted to the repository root so Vercel can deploy the root directory directly.
 
 ## Runtime Components
 
 | Component | Location | Responsibility |
 | --- | --- | --- |
-| Express server | `webapp-restart/server.js` | Static file serving, auth, sessions, permissions, APIs, report SQL |
-| HTML shell | `webapp-restart/index.html` | Page containers, forms, navigation structure |
-| Frontend JS | `webapp-restart/ui/app.js` | Routing, state, form logic, API calls, rendering |
-| Frontend CSS | `webapp-restart/ui/app.css` | App visual design and responsive layout |
-| Assets | `webapp-restart/assets/` | MCM logo and image assets |
-| Vercel config | `webapp-restart/vercel.json` | Deployment behavior |
+| Express server | `server.js` | Static file serving, auth, sessions, permissions, APIs, report SQL |
+| HTML shell | `index.html` | Page containers, forms, navigation structure |
+| Frontend JS | `ui/app.js` | Routing, state, form logic, API calls, rendering |
+| Frontend CSS | `ui/app.css` | App visual design and responsive layout |
+| Assets | `assets/` | MCM logo and image assets |
+| Vercel config | `vercel.json` | Deployment behavior |
 | Database migrations | `supabase/migrations/` | Schema evolution |
 | Seed data | `supabase/seeds/` | Imported historical data and validation scripts |
 
@@ -68,6 +68,7 @@ Required:
 | `DATABASE_URL` | Supabase/Postgres connection string |
 | `SESSION_SECRET` | Signed cookie secret |
 | `NODE_ENV` | Enables production cookie and SSL behavior |
+| `APP_ENV` | Environment tag; set to `prod` in production |
 | `PORT` | Local port, defaults to `4173` |
 
 ## Frontend Architecture
@@ -202,15 +203,16 @@ These reduce duplicated code but require careful metadata, validation, and permi
 Vercel project root:
 
 ```text
-webapp-restart
+<repository root>
 ```
 
 Production environment variables:
 
 ```text
-DATABASE_URL
+DATABASE_URL=<production Supabase shared pooler URL>
 SESSION_SECRET
 NODE_ENV=production
+APP_ENV=prod
 ```
 
 ### Recommended Deployment Environments
@@ -274,7 +276,7 @@ Report queries should prefer grouped SQL aggregates over deriving totals from li
 
 ### Short Term
 
-1. Keep `webapp-restart` as the active app.
+1. Keep the repository root as the active production app.
 2. Create smoke tests for static assets and critical APIs.
 3. Add a developer checklist before every production deploy.
 4. Avoid broad refactors while active operational bugs are being fixed.
@@ -294,4 +296,3 @@ Report queries should prefer grouped SQL aggregates over deriving totals from li
 3. Add role-based test fixtures.
 4. Add admin cache-clear and report-debug screens.
 5. Add deployment automation from dev to production.
-

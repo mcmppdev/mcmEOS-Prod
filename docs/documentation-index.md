@@ -23,12 +23,11 @@
 
 | Path | Purpose |
 | --- | --- |
-| `../webapp-restart/server.js` | Active Express API/server |
-| `../webapp-restart/index.html` | Active app shell |
-| `../webapp-restart/ui/app.js` | Active frontend logic |
-| `../webapp-restart/ui/app.css` | Active frontend styles |
+| `../server.js` | Active Express API/server |
+| `../index.html` | Active app shell |
+| `../ui/app.js` | Active frontend logic |
+| `../ui/app.css` | Active frontend styles |
 | `../supabase/migrations/` | Database schema migrations |
-| `../supabase/seeds/` | Seed and verification SQL |
 
 ## Recommended Reading Order
 
@@ -38,4 +37,3 @@
 4. System Flow
 5. Dev and Production Repository Strategy
 6. Existing migration maps
-

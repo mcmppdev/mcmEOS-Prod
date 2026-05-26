@@ -2,7 +2,7 @@
 
 Clean production deployment repository for the MCM EOS web app.
 
-This repository promotes the `webapp-restart` application to the repository root so Vercel can deploy from the root directory.
+This repository contains the production application at the repository root so Vercel can deploy without a nested root directory.
 
 ## Contents
 
@@ -28,13 +28,19 @@ Output Directory: <empty>
 Required environment variables:
 
 ```text
-DATABASE_URL=<Supabase pooler URL>
+DATABASE_URL=<production Supabase shared pooler URL>
 SESSION_SECRET=<strong production secret>
 NODE_ENV=production
 APP_ENV=prod
 ```
 
-Use the Supabase pooler connection string for `DATABASE_URL`. Do not commit `.env` files or secrets.
+Use the Supabase shared transaction pooler connection string for `DATABASE_URL`, not the IPv6-only direct database endpoint. A production URL should look like:
+
+```text
+postgresql://postgres.<project-ref>:<password>@<pooler-host>:6543/postgres?sslmode=require
+```
+
+Do not commit `.env` files or secrets.
 
 ## Local Smoke Test
 
@@ -42,7 +48,7 @@ Use the Supabase pooler connection string for `DATABASE_URL`. Do not commit `.en
 npm install
 node --check server.js
 node --check ui/app.js
-$env:DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<pooler-host>:5432/postgres?sslmode=no-verify"
+$env:DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<pooler-host>:6543/postgres?sslmode=require"
 $env:SESSION_SECRET="local-test-secret"
 $env:NODE_ENV="production"
 $env:APP_ENV="prod"

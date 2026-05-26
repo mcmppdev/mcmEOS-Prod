@@ -8,26 +8,27 @@ The current repository contains active code, legacy/reference code, migrations, 
 
 ## Current State
 
-Current repository:
+Production repository:
 
 ```text
-mcmEOS
+mcmEOS-Prod
 ```
 
 Important folders:
 
 ```text
-webapp-restart/   active app
-webapp/           earlier/legacy app
-supabase/         migrations and seeds
+server.js         active Express app
+index.html        active app shell
+ui/               frontend logic and styles
+assets/           production app assets
+supabase/         migrations
 docs/             documentation
-scripts/          migration utilities
 ```
 
 Active deployable app root:
 
 ```text
-webapp-restart
+repository root
 ```
 
 ## Recommendation
@@ -109,7 +110,7 @@ Use this only if the team explicitly wants physical repository separation.
 
 ### Safe Promotion Method
 
-Do not manually drag/drop files. Use Git:
+Do not manually drag/drop files. Promote reviewed commits from the development repository into this production repository using Git:
 
 ```powershell
 git remote add prod <production-repo-url>
@@ -126,14 +127,16 @@ git fetch dev
 git merge dev/main
 ```
 
-## Recommended Folder Cleanup Before Production
-
-Before creating a production repository or production branch, decide what belongs in production.
+## Production Repository Contents
 
 ### Keep in Production
 
 ```text
-webapp-restart/
+server.js
+api/
+index.html
+ui/
+assets/
 supabase/migrations/
 docs/
 README.md
@@ -142,11 +145,11 @@ README.md
 ### Usually Keep, But Review
 
 ```text
-scripts/
-supabase/seeds/verify_*.sql
+server_migration_guide.md
+db.js
 ```
 
-These are useful for operations and verification.
+These are useful for operations and the planned `source_env` migration.
 
 ### Keep Out of Production or Archive Separately
 
@@ -157,7 +160,7 @@ large historical seed chunks not needed by runtime
 temporary logs
 ```
 
-The `webapp/` folder appears to be an older implementation. It should not be deployed as the production app if `webapp-restart/` is the accepted active app.
+The production repo should keep the deployable app at the repository root.
 
 ## Proposed Repository Layout Going Forward
 
@@ -171,13 +174,7 @@ mcmEOS/
   supabase/
     migrations/
     seeds/
-  webapp-restart/
-    index.html
-    server.js
-    package.json
-    vercel.json
-    ui/
-    assets/
+  webapp-restart/ or root app folder, depending on deployment model
 ```
 
 If using separate repos:
@@ -187,7 +184,13 @@ mcmEOS-dev/
   full working tree, including experiments and migration helpers
 
 mcmEOS-prod/
-  production-ready subset only
+  server.js
+  api/
+  index.html
+  ui/
+  assets/
+  supabase/migrations/
+  docs/
 ```
 
 ## Environment Separation
@@ -238,8 +241,8 @@ Code separation is not enough. The databases must also be separated.
 
 Before promoting to production:
 
-- `node --check webapp-restart/server.js`
-- `node --check webapp-restart/ui/app.js`
+- `node --check server.js`
+- `node --check ui/app.js`
 - Start local app and verify `/`, `/ui/app.js`, `/ui/app.css`.
 - Test login with a non-admin user.
 - Test login with an admin user.
@@ -267,7 +270,7 @@ The safest sequence is:
 1. Create `mcmEOS-dev` and push the full current repository.
 2. Create `mcmEOS-prod`.
 3. Copy only approved production files using Git history, not manual file copy.
-4. Configure Vercel production to use `mcmEOS-prod/webapp-restart`.
+4. Configure Vercel production to use the `mcmEOS-Prod` repository root.
 5. Lock production repository write access.
 6. Promote from dev to prod through reviewed pull requests or controlled Git merges.
 
@@ -279,6 +282,6 @@ Do not:
 - Test new migrations directly on production first.
 - Use the same `DATABASE_URL` for dev and production.
 - Keep production secrets in `.env` files.
-- Deploy both `webapp/` and `webapp-restart/` as active apps.
+- Deploy multiple app roots from the same production Vercel project.
 - Let Leadership report cache hide calculation fixes during testing.
 

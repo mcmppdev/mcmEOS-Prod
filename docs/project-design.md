@@ -24,14 +24,11 @@ The repository contains three important layers:
 
 | Path | Role | Status |
 | --- | --- | --- |
-| `webapp-restart/` | Active app implementation and Vercel root candidate | Primary working code |
-| `webapp/` | Earlier web app / legacy migration build | Reference and fallback only |
+| `server.js`, `index.html`, `ui/`, `assets/`, `api/` | Active app implementation at the production repo root | Primary production code |
 | `supabase/migrations/` | Database schema history | Source of truth for database structure |
-| `supabase/seeds/` | Imported seed data and verification SQL | Source of truth for historical imported data |
 | `docs/` | Migration maps and project documentation | Documentation hub |
-| `scripts/` | PowerShell seed-generation utilities | Migration support |
 
-Going forward, new application work should happen in `webapp-restart/` unless a deliberate refactor or framework migration is planned.
+Going forward, production application work in this repository should happen at the repository root. Development work can continue in the Dev repository and be promoted here through reviewed Git changes.
 
 ## Product Design Principles
 
@@ -48,7 +45,7 @@ The application is not a marketing site. It is an internal operational tool. Scr
 
 ### One Shell, Many Apps
 
-The active frontend is a single-page application shell served from `webapp-restart/index.html`, with behavior in `webapp-restart/ui/app.js` and styling in `webapp-restart/ui/app.css`.
+The active frontend is a single-page application shell served from `index.html`, with behavior in `ui/app.js` and styling in `ui/app.css`.
 
 The shell exposes app-level areas:
 
@@ -215,10 +212,9 @@ Leadership reports are cached in `leadership_report_snapshots` and rate-limited 
 
 The next design iteration should keep the current operational UX but improve maintainability:
 
-1. Keep `webapp-restart` as the active app root.
+1. Keep the repository root as the active production app root.
 2. Split `ui/app.js` into domain modules when build tooling is introduced.
 3. Keep server-side validation authoritative.
 4. Add automated smoke tests for all critical pages and APIs.
 5. Create separate development and production deployment environments.
 6. Treat Supabase migrations as mandatory review items before production deployment.
-
