@@ -706,7 +706,7 @@ const ADMIN_APPS = [
   { key: "mm", label: "MPM", modules: ["purchases", "vendor_payments"] },
   { key: "pm", label: "PM", modules: ["production", "material_usage", "material_stock"] },
   { key: "maintenance", label: "MN", modules: ["machine_maintenance"] },
-  { key: "leadership", label: "LD", modules: ["sales", "payments", "customers", "dues", "leads", "purchases", "vendor_payments", "production", "material_usage", "material_stock", "operational_expenses", "salary_payments", "expense_advances"] },
+  { key: "leadership", label: "LD", modules: ["sales", "payments", "customers", "dues", "leads", "purchases", "vendor_payments", "production", "material_usage", "material_stock", "machine_maintenance", "operational_expenses", "salary_payments", "expense_advances"] },
   { key: "admin", label: "Admin", modules: ["users", "products", "materials_master", "resources", "enum_values"] }
 ];
 
@@ -1752,7 +1752,7 @@ const PAGE_ACCESS = {
   "fin-advance-new": { module: "expense_advances", action: "create" },
   "admin-enums": { any: ["enum_values", "users"], action: "view" },
   "admin-org": { any: ["users"], action: "view" },
-  "leadership-dash": { any: ["sales", "payments", "customers", "dues", "leads", "purchases", "vendor_payments", "production", "material_usage", "material_stock", "operational_expenses", "salary_payments", "expense_advances"], action: "view" }
+  "leadership-dash": { any: ["sales", "payments", "customers", "dues", "leads", "purchases", "vendor_payments", "production", "material_usage", "material_stock", "machine_maintenance", "operational_expenses", "salary_payments", "expense_advances"], action: "view" }
 };
 
 function navTo(p) { showPage(p); }
@@ -2050,7 +2050,7 @@ function homeTaskComplete(taskId) {
 }
 
 const LEADERSHIP_SECTIONS = [
-  { id: "sales-payments", label: "Overall", modules: ["sales", "payments", "purchases", "vendor_payments", "operational_expenses", "salary_payments", "expense_advances"] },
+  { id: "sales-payments", label: "Overall", modules: ["sales", "payments", "purchases", "vendor_payments", "machine_maintenance", "operational_expenses", "salary_payments", "expense_advances"] },
   { id: "sales-mom", label: "Sales MoM", modules: ["sales"] },
   { id: "sales-insights", label: "Sales Insights", modules: ["sales"] },
   { id: "customer-payments", label: "Customer Payments", modules: ["payments"] },

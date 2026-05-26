@@ -313,6 +313,7 @@ async function requireAuth(req, res, next) {
 }
 
 function modulePermission(req, moduleKey, action) {
+  if (isSuperAdmin(req)) return true;
   const match = req.sessionData.permissions.find((p) => p.module_key === moduleKey);
   if (!match) return false;
   if (action === "view") return Boolean(match.can_view);
@@ -513,6 +514,7 @@ async function ensureLeadershipReportIndexes() {
     "create index if not exists leadership_vendor_payments_payment_date_idx on public.vendor_payments (payment_date)",
     "create index if not exists leadership_productions_production_date_idx on public.productions (production_date)",
     "create index if not exists leadership_material_usage_usage_date_idx on public.material_usage (usage_date)",
+    "create index if not exists leadership_machine_maintenance_maintenance_date_idx on public.machine_maintenance (maintenance_date)",
     "create index if not exists leadership_operational_expenses_expense_date_idx on public.operational_expenses (expense_date)",
     "create index if not exists leadership_salary_payments_payment_date_idx on public.salary_payments (payment_date)",
     "create index if not exists leadership_expense_advances_payment_date_idx on public.expense_advances (payment_date)"
@@ -1098,6 +1100,81 @@ function normalizeMaintenance(row) {
   };
 }
 
+let machineMaintenanceSchemaReady = null;
+
+async function ensureMachineMaintenanceSchema() {
+  if (machineMaintenanceSchemaReady) return machineMaintenanceSchemaReady;
+  machineMaintenanceSchemaReady = (async () => {
+    await pool.query(`
+      create table if not exists public.machine_maintenance (
+        maintenance_id text primary key,
+        machine_id text references public.machines(machine_id),
+        machine_name_snapshot text,
+        maintenance_date date not null,
+        next_due_date date,
+        maintenance_type text,
+        status text not null default 'Scheduled',
+        priority text not null default 'Normal',
+        performed_by text,
+        downtime_hours numeric(12, 2) not null default 0,
+        spare_parts_cost numeric(14, 2) not null default 0,
+        oil_cost numeric(14, 2) not null default 0,
+        repair_cost numeric(14, 2) not null default 0,
+        labor_cost numeric(14, 2) not null default 0,
+        other_cost numeric(14, 2) not null default 0,
+        total_cost numeric(14, 2) not null default 0,
+        issue_notes text,
+        work_done text,
+        parts_used text,
+        damage_notes text,
+        entered_by_user_id text references public.app_users(user_id),
+        last_edited_by_user_id text references public.app_users(user_id),
+        created_by_user_id text references public.app_users(user_id),
+        created_by_name text,
+        updated_by_user_id text references public.app_users(user_id),
+        updated_by_name text,
+        source_env text not null default coalesce(nullif(current_setting('app.source_env', true), ''), 'prod'),
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )
+    `);
+    await pool.query("alter table if exists public.machine_maintenance drop constraint if exists machine_maintenance_source_env_check");
+    await pool.query("alter table if exists public.machine_maintenance add constraint machine_maintenance_source_env_check check (source_env in ('dev', 'prod'))");
+    await pool.query("create index if not exists machine_maintenance_env_date_idx on public.machine_maintenance (source_env, maintenance_date)");
+    await pool.query("create index if not exists machine_maintenance_env_due_idx on public.machine_maintenance (source_env, next_due_date)");
+    await pool.query("create index if not exists machine_maintenance_env_machine_idx on public.machine_maintenance (source_env, machine_id)");
+    await pool.query("create index if not exists machine_maintenance_env_status_idx on public.machine_maintenance (source_env, status)");
+    await pool.query(`
+      insert into public.app_modules (module_key, module_name, module_group, route_path, display_order, is_active)
+      values ('machine_maintenance', 'Machine Maintenance', 'Factory', '/maintenance', 135, true)
+      on conflict (module_key) do update set
+        module_name = excluded.module_name,
+        module_group = excluded.module_group,
+        route_path = excluded.route_path,
+        display_order = excluded.display_order,
+        is_active = true
+    `);
+    await pool.query(`
+      insert into public.app_user_module_access (
+        user_id, module_key, can_view, can_create, can_update, can_delete, can_edit_own
+      )
+      select user_id, 'machine_maintenance', true, true, true, true, true
+      from public.app_users
+      where lower(coalesce(role, '')) = 'super_admin'
+      on conflict (user_id, module_key) do update set
+        can_view = excluded.can_view,
+        can_create = excluded.can_create,
+        can_update = excluded.can_update,
+        can_delete = excluded.can_delete,
+        can_edit_own = excluded.can_edit_own
+    `);
+  })().catch((error) => {
+    machineMaintenanceSchemaReady = null;
+    throw error;
+  });
+  return machineMaintenanceSchemaReady;
+}
+
 function normalizeOperator(row) {
   return {
     operatorId: row.operator_id,
@@ -1441,6 +1518,17 @@ function liveModuleConfig(moduleKey) {
       amountField: "closing_stock",
       columns: ["stock_id", "material_id", "material_name_snapshot", "material_type", "opening_stock", "closing_stock", "unit", "stock_date", "notes"],
       createFields: ["material_id", "material_name_snapshot", "material_type", "opening_stock", "closing_stock", "unit", "stock_date", "notes"],
+      actorMode: "created_by"
+    },
+    machine_maintenance: {
+      table: "public.machine_maintenance",
+      pk: "maintenance_id",
+      prefix: "MT",
+      dateField: "maintenance_date",
+      titleField: "machine_name_snapshot",
+      amountField: "total_cost",
+      columns: ["maintenance_id", "maintenance_date", "next_due_date", "machine_name_snapshot", "maintenance_type", "status", "priority", "performed_by", "downtime_hours", "spare_parts_cost", "oil_cost", "repair_cost", "labor_cost", "other_cost", "total_cost"],
+      createFields: ["maintenance_date", "next_due_date", "machine_name_snapshot", "maintenance_type", "status", "priority", "performed_by", "downtime_hours", "spare_parts_cost", "oil_cost", "repair_cost", "labor_cost", "other_cost", "total_cost"],
       actorMode: "created_by"
     },
     resources: {
@@ -2039,6 +2127,7 @@ app.put("/api/admin/organisation", requireAuth, async (req, res) => {
 app.get("/api/admin/modules", requireAuth, async (req, res) => {
   try {
     if (!canManageUsers(req)) return res.status(403).json({ error: "Forbidden" });
+    await ensureMachineMaintenanceSchema();
     const sql = `
       select module_key, module_name, module_group, display_order, is_active
       from public.app_modules
@@ -2115,6 +2204,7 @@ app.get("/api/admin/dashboard", requireAuth, async (req, res) => {
 app.patch("/api/admin/modules/:moduleKey", requireAuth, async (req, res) => {
   try {
     if (!isSuperAdmin(req)) return res.status(403).json({ error: "Only Super Admin can toggle applications" });
+    await ensureMachineMaintenanceSchema();
     const moduleKey = sanitizeModuleKey(req.params.moduleKey);
     const isActive = Boolean(req.body?.is_active);
     const sql = `
@@ -2150,6 +2240,7 @@ app.get("/api/admin/users", requireAuth, async (req, res) => {
 app.get("/api/admin/users/:userId/access", requireAuth, async (req, res) => {
   try {
     if (!canManageUsers(req)) return res.status(403).json({ error: "Forbidden" });
+    await ensureMachineMaintenanceSchema();
     const userId = String(req.params.userId || "").trim();
     const sql = `
       select module_key, can_view, can_create, can_update, can_delete, can_edit_own
@@ -3859,6 +3950,7 @@ async function touchMachineMaintenanceDate(client, record) {
 
 app.get("/api/maintenance/initial", requireAuth, async (req, res) => {
   try {
+    await ensureMachineMaintenanceSchema();
     if (!modulePermission(req, "machine_maintenance", "view")) return res.status(403).json({ error: "Forbidden" });
     const [recordsRes, machinesRes] = await Promise.all([
       pool.query(
@@ -3888,6 +3980,7 @@ app.get("/api/maintenance/initial", requireAuth, async (req, res) => {
 app.post("/api/maintenance/records", requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
+    await ensureMachineMaintenanceSchema();
     if (!modulePermission(req, "machine_maintenance", "create")) return res.status(403).json({ error: "Forbidden" });
     const p = maintenancePayload(req.body || {});
     if (!p.machineId && !p.machineName) return res.status(400).json({ error: "Machine is required." });
@@ -3932,6 +4025,7 @@ app.post("/api/maintenance/records", requireAuth, async (req, res) => {
 app.put("/api/maintenance/records/:maintenanceId", requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
+    await ensureMachineMaintenanceSchema();
     if (!modulePermission(req, "machine_maintenance", "update")) return res.status(403).json({ error: "Forbidden" });
     const p = maintenancePayload(req.body || {});
     if (!p.machineId && !p.machineName) return res.status(400).json({ error: "Machine is required." });
@@ -3971,6 +4065,7 @@ app.put("/api/maintenance/records/:maintenanceId", requireAuth, async (req, res)
 
 app.delete("/api/maintenance/records/:maintenanceId", requireAuth, async (req, res) => {
   try {
+    await ensureMachineMaintenanceSchema();
     if (!modulePermission(req, "machine_maintenance", "delete")) return res.status(403).json({ error: "Forbidden" });
     const { rowCount } = await pool.query(
       "delete from public.machine_maintenance where maintenance_id = $1 and source_env = $2",
@@ -4432,7 +4527,7 @@ app.get("/api/dashboard/summary", requireAuth, async (req, res) => {
 
 app.get("/api/leadership/quota", requireAuth, async (req, res) => {
   try {
-    if (sectionForbidden(req, ["sales", "payments", "customers", "dues", "leads", "purchases", "vendor_payments", "production", "material_usage", "material_stock", "operational_expenses", "salary_payments", "expense_advances"])) {
+    if (sectionForbidden(req, ["sales", "payments", "customers", "dues", "leads", "purchases", "vendor_payments", "production", "material_usage", "material_stock", "machine_maintenance", "operational_expenses", "salary_payments", "expense_advances"])) {
       return res.status(403).json({ error: "Forbidden" });
     }
     const quota = await getLeadershipQuota();
@@ -4480,8 +4575,8 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
     };
 
     if (section === "sales-payments") {
-      if (sectionForbidden(req, ["sales", "payments", "purchases", "vendor_payments", "operational_expenses", "salary_payments", "expense_advances"])) return res.status(403).json({ error: "Forbidden" });
-      const [sales, custPay, purchases, vendPay, expenses, salaries, advances] = await Promise.all([
+      if (sectionForbidden(req, ["sales", "payments", "purchases", "vendor_payments", "machine_maintenance", "operational_expenses", "salary_payments", "expense_advances"])) return res.status(403).json({ error: "Forbidden" });
+      const [sales, custPay, purchases, vendPay, maintenance, expenses, salaries, advances] = await Promise.all([
         canViewAny(req, ["sales"]) ? pool.query(`
           select to_char(date_trunc('month', sale_date), 'YYYY-MM') as sort_key,
                  to_char(date_trunc('month', sale_date), 'Mon YYYY') as month,
@@ -4514,6 +4609,14 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
           where ${inRange("payment_date")}
           group by 1, 2
         `, params) : Promise.resolve({ rows: [] }),
+        canViewAny(req, ["machine_maintenance"]) ? pool.query(`
+          select to_char(date_trunc('month', maintenance_date), 'YYYY-MM') as sort_key,
+                 to_char(date_trunc('month', maintenance_date), 'Mon YYYY') as month,
+                 coalesce(sum(total_cost), 0)::numeric as amount
+          from public.machine_maintenance
+          where ${inRange("maintenance_date")}
+          group by 1, 2
+        `, params) : Promise.resolve({ rows: [] }),
         canViewAny(req, ["operational_expenses"]) ? pool.query(`
           select to_char(date_trunc('month', expense_date), 'YYYY-MM') as sort_key,
                  to_char(date_trunc('month', expense_date), 'Mon YYYY') as month,
@@ -4541,37 +4644,39 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
       ]);
       const monthMap = new Map();
       const merge = (rows, key) => rows.forEach((r) => {
-        if (!monthMap.has(r.sort_key)) monthMap.set(r.sort_key, { sortKey: r.sort_key, month: r.month, sales: 0, custPay: 0, purchase: 0, vendPay: 0, expenses: 0, salaries: 0, advances: 0 });
+        if (!monthMap.has(r.sort_key)) monthMap.set(r.sort_key, { sortKey: r.sort_key, month: r.month, sales: 0, custPay: 0, purchase: 0, vendPay: 0, maintenance: 0, expenses: 0, salaries: 0, advances: 0 });
         monthMap.get(r.sort_key)[key] = Number(r.amount || 0);
       });
-      merge(sales.rows, "sales"); merge(custPay.rows, "custPay"); merge(purchases.rows, "purchase"); merge(vendPay.rows, "vendPay"); merge(expenses.rows, "expenses"); merge(salaries.rows, "salaries"); merge(advances.rows, "advances");
+      merge(sales.rows, "sales"); merge(custPay.rows, "custPay"); merge(purchases.rows, "purchase"); merge(vendPay.rows, "vendPay"); merge(maintenance.rows, "maintenance"); merge(expenses.rows, "expenses"); merge(salaries.rows, "salaries"); merge(advances.rows, "advances");
       const rows = [...monthMap.values()].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
       const totals = rows.reduce((a, r) => ({
         sales: a.sales + r.sales,
         custPay: a.custPay + r.custPay,
         purchase: a.purchase + r.purchase,
         vendPay: a.vendPay + r.vendPay,
+        maintenance: a.maintenance + r.maintenance,
         expenses: a.expenses + r.expenses,
         salaries: a.salaries + r.salaries,
         advances: a.advances + r.advances
-      }), { sales: 0, custPay: 0, purchase: 0, vendPay: 0, expenses: 0, salaries: 0, advances: 0 });
+      }), { sales: 0, custPay: 0, purchase: 0, vendPay: 0, maintenance: 0, expenses: 0, salaries: 0, advances: 0 });
       return returnLeadershipReport({ range, rows, totals });
     }
 
     if (section === "pl") {
-      if (sectionForbidden(req, ["sales", "payments", "purchases", "vendor_payments", "operational_expenses", "salary_payments", "expense_advances"])) return res.status(403).json({ error: "Forbidden" });
+      if (sectionForbidden(req, ["sales", "payments", "purchases", "vendor_payments", "machine_maintenance", "operational_expenses", "salary_payments", "expense_advances"])) return res.status(403).json({ error: "Forbidden" });
       const sumIf = (can, sql) => can ? pool.query(sql, params).then((r) => Number(r.rows[0]?.amount || 0)) : Promise.resolve(0);
-      const [sales, purchases, generalExpenses, expenseAdvances, salaries, custPayments, vendorPayments] = await Promise.all([
+      const [sales, purchases, maintenanceCost, generalExpenses, expenseAdvances, salaries, custPayments, vendorPayments] = await Promise.all([
         sumIf(canViewAny(req, ["sales"]), `select coalesce(sum(total_amount), 0)::numeric as amount from public.sales_entries where ${inRange("sale_date")}`),
         sumIf(canViewAny(req, ["purchases"]), `select coalesce(sum(total_amount), 0)::numeric as amount from public.material_purchases where ${inRange("purchase_date")}`),
+        sumIf(canViewAny(req, ["machine_maintenance"]), `select coalesce(sum(total_cost), 0)::numeric as amount from public.machine_maintenance where ${inRange("maintenance_date")}`),
         sumIf(canViewAny(req, ["operational_expenses"]), `select coalesce(sum(amount), 0)::numeric as amount from public.operational_expenses where ${inRange("expense_date")}`),
         sumIf(canViewAny(req, ["expense_advances"]), `select coalesce(sum(amount), 0)::numeric as amount from public.expense_advances where ${inRange("payment_date")}`),
         sumIf(canViewAny(req, ["salary_payments"]), `select coalesce(sum(amount), 0)::numeric as amount from public.salary_payments where ${inRange("payment_date")} and lower(coalesce(payment_type, '')) <> 'advance'`),
         sumIf(canViewAny(req, ["payments"]), `select coalesce(sum(amount_paid), 0)::numeric as amount from public.customer_payments where ${inRange("payment_date")}`),
         sumIf(canViewAny(req, ["vendor_payments"]), `select coalesce(sum(amount), 0)::numeric as amount from public.vendor_payments where ${inRange("payment_date")}`)
       ]);
-      const outflow = purchases + generalExpenses + salaries;
-      return returnLeadershipReport({ range, totals: { sales, purchases, generalExpenses, expenseAdvances, salaries, custPayments, vendorPayments, outflow, net: sales - outflow } });
+      const outflow = purchases + maintenanceCost + generalExpenses + salaries;
+      return returnLeadershipReport({ range, totals: { sales, purchases, maintenanceCost, generalExpenses, expenseAdvances, salaries, custPayments, vendorPayments, outflow, net: sales - outflow } });
     }
 
     if (section === "sales-mom") {
