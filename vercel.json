@@ -1,14 +1,9 @@
 {
   "version": 2,
-  "functions": {
-    "api/index.js": {
-      "includeFiles": "{index.html,ui/**,assets/**}"
-    }
-  },
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "api/index.js"
+      "dest": "/api/index.js"
     }
   ]
 }
