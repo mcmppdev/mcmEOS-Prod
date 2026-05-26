@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0A2540">
+  <title>MCM Sales Suite</title>
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./ui/app.css">
+</head>
+<body>
+  <main id="loginView" class="login-view">
+    <section class="login-card">
+      <div class="login-brand">
+        <img src="./assets/mcm-logo-cropped.png" alt="MCM logo" class="login-logo">
+        <div>
+          <p>Operations Suite</p>
+          <h1>MCM Paper Products</h1>
+        </div>
+      </div>
+      <p class="login-copy">Secure access to sales, production, procurement, purchases, resources, and admin workflows.</p>
+      <form id="loginForm" class="login-form">
+        <label>Username<input id="username" type="text" autocomplete="username" required></label>
+        <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+        <button class="btn-primary" type="submit">Sign In</button>
+      </form>
+      <p id="loginError" class="error-text hidden"></p>
+    </section>
+  </main>
+
+  <main id="salesApp" class="app-shell hidden">
+    <div class="loader-overlay" id="loaderOverlay">
+      <div class="loader-card"><div class="spinner"></div><div class="loader-text" id="loaderText">Loading...</div></div>
+    </div>
+    <div class="toast" id="toast"></div>
+    <div class="modal-overlay" id="leadModal">
+      <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-title" id="leadModalTitle">Edit Lead</div>
+        <div id="leadModalBody"></div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="appSwitchModal">
+      <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-title">Switch App</div>
+        <div class="app-switch-list">
+          <button type="button" class="app-switch-card" data-app="home" onclick="switchApp('home')">
+            <span class="app-switch-icon">HM</span>
+            <span><strong>Home</strong><small>Calendar, tasks, and follow-ups</small></span>
+          </button>
+          <button type="button" class="app-switch-card" data-app="sales" onclick="switchApp('sales')">
+            <span class="app-switch-icon">SM</span>
+            <span><strong>SM</strong><small>Sales Suite</small></span>
+          </button>
+          <button type="button" class="app-switch-card" data-app="marketing" onclick="switchApp('marketing')">
+            <span class="app-switch-icon">MM</span>
+            <span><strong>MM</strong><small>Marketing Management</small></span>
+          </button>
+          <button type="button" class="app-switch-card" data-app="finance" onclick="switchApp('finance')">
+            <span class="app-switch-icon">FM</span>
+            <span><strong>FM</strong><small>Finance Management</small></span>
+          </button>
+          <button type="button" class="app-switch-card" data-app="mm" onclick="switchApp('mm')">
+            <span class="app-switch-icon">MP</span>
+            <span><strong>MPM</strong><small>Material Purchase Management</small></span>
+          </button>
+          <button type="button" class="app-switch-card" data-app="pm" onclick="switchApp('pm')">
+            <span class="app-switch-icon">PM</span>
+            <span><strong>PM</strong><small>Production Management</small></span>
+          </button>
+          <button type="button" class="app-switch-card" data-app="leadership" onclick="switchApp('leadership')">
+            <span class="app-switch-icon">LD</span>
+            <span><strong>LD</strong><small>Leadership Dashboard</small></span>
+          </button>
+          <button type="button" class="app-switch-card" data-app="admin" onclick="switchApp('admin')">
+            <span class="app-switch-icon">AD</span>
+            <span><strong>Admin</strong><small>User management, products, master data, and resources</small></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="app-bar">
+      <button id="appMenuBtn" class="app-menu-btn" type="button" onclick="openAppSwitch()" aria-label="Switch app">☰</button>
+      <img src="./assets/mcm-logo-cropped.png" class="app-logo" alt="MCM Logo">
+      <span class="app-bar-title" id="appBarTitle">MCM Sales Suite</span>
+      <span class="app-bar-badge" id="appBarBadge">CRM</span>
+      <button id="logoutBtn" class="logout-btn" type="button">LOG OUT</button>
+    </div>
+
+    <div class="sub-tabs hidden" id="subTabs"></div>
+
+    <div class="page-content" id="pageContent">
+      <div class="page" id="page-home">
+        <div class="page-scroll home-page">
+          <div class="home-hero">
+            <div>
+              <div class="home-kicker" id="home-date-label">Today</div>
+              <div class="home-title" id="home-greeting">Welcome</div>
+              <div class="home-sub" id="home-summary">Loading your day...</div>
+            </div>
+            <button class="home-month-btn" type="button" onclick="homeToday()">Today</button>
+          </div>
+          <div class="home-calendar-card">
+            <div class="home-calendar-head">
+              <button class="icon-btn" type="button" onclick="homeMoveMonth(-1)">&lt;</button>
+              <div class="home-month-title" id="home-month-title">Month</div>
+              <button class="icon-btn" type="button" onclick="homeMoveMonth(1)">&gt;</button>
+            </div>
+            <div class="home-weekdays"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+            <div class="home-calendar-grid" id="home-calendar-grid"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-header-icon">TK</div><span class="card-header-label">Quick Task</span></div>
+            <div class="card-body">
+              <div class="field"><label class="field-label">Task</label><input id="home-task-title" class="field-input" placeholder="What needs attention?"></div>
+              <div class="g2"><div class="field"><label class="field-label">Due Date</label><input type="date" id="home-task-date" class="field-input"></div><div class="field"><label class="field-label">Priority</label><select id="home-task-priority" class="field-input"><option>Normal</option><option>High</option><option>Low</option></select></div></div>
+              <div class="field"><label class="field-label">Notes</label><input id="home-task-notes" class="field-input" placeholder="Optional note"></div>
+              <button class="btn-primary" type="button" onclick="homeTaskCreate()">Add Task</button>
+            </div>
+          </div>
+          <div class="section-header"><span class="section-title" id="home-task-list-title">Tasks</span><button class="section-action" onclick="homeRefresh()">Refresh</button></div>
+          <div id="home-task-list"></div>
+        </div>
+      </div>
+
+      <div class="page" id="page-leadership-dash">
+        <div class="page-scroll leadership-page">
+          <div class="leadership-hero">
+            <div>
+              <div class="leadership-kicker">Leadership Intelligence</div>
+              <div class="leadership-title">MCM Dashboard</div>
+              <div class="leadership-sub" id="ldash-updated">Ready</div>
+              <div class="leadership-quota" id="ldash-quota">Checking monthly quota...</div>
+            </div>
+            <button class="leadership-refresh" type="button" onclick="leadershipRefresh()">Refresh</button>
+          </div>
+          <div class="filter-card leadership-filter">
+            <div class="field"><label class="field-label">Period</label><select id="ldash-period" class="field-input" onchange="leadershipPeriodChanged()"><option value="this_month">This Month</option><option value="last_month">Last Month</option><option value="last_3_months">Last 3 Months</option><option value="this_year">This Year</option><option value="all_time">All Time</option><option value="custom">Custom</option></select></div>
+            <div class="g2 leadership-custom-dates hidden" id="ldash-custom-dates"><div class="field"><label class="field-label">Start</label><input type="date" id="ldash-start" class="field-input"></div><div class="field"><label class="field-label">End</label><input type="date" id="ldash-end" class="field-input"></div></div>
+          </div>
+          <div class="leadership-tabs" id="leadership-tabs"></div>
+          <div id="leadership-content" class="leadership-content"><div class="empty"><p>Select a dashboard tab.</p></div></div>
+        </div>
+      </div>
+
+      <div class="page" id="page-cust-dash">
+        <div class="page-scroll">
+          <div class="cd-hero slide-up">
+            <div class="cd-hero-label">Total Customers</div>
+            <div class="cd-hero-value" id="cd-total">-</div>
+            <div class="cd-hero-sub" id="cd-subtitle">Loading...</div>
+            <div class="cd-pills">
+              <div class="cd-pill active"><div class="cd-dot active"></div><span id="cd-active">0 Active</span></div>
+              <div class="cd-pill inactive"><div class="cd-dot inactive"></div><span id="cd-inactive">0 Inactive</span></div>
+            </div>
+          </div>
+          <div class="stats-row three">
+            <div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Cities</div><div class="stat-value blue" id="cd-cities">0</div></div>
+            <div class="stat-card" style="--accent:var(--purple)"><div class="stat-label">Companies</div><div class="stat-value purple" id="cd-companies">0</div></div>
+            <div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Types</div><div class="stat-value orange" id="cd-types">0</div></div>
+          </div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">#</div><span class="card-header-label">By Customer Type</span></div><div class="card-body" id="cd-type-breakdown"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">#</div><span class="card-header-label">Top Cities</span></div><div class="card-body" id="cd-city-breakdown"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">#</div><span class="card-header-label">Recent Customers (Last 10)</span></div><div class="card-body" id="cd-recent"></div></div>
+        </div>
+      </div>
+
+      <div class="page" id="page-customer">
+        <div class="customer-progress"><div class="customer-progress-fill" id="customer-bar" style="width:0%"></div></div>
+        <div class="chat-messages" id="customer-msgs"></div>
+        <div class="customer-footer">
+          <div id="customer-inputArea" class="chat-input-row">
+            <div id="customer-fieldWrap" style="flex:1;"></div>
+            <button class="send-btn" id="customer-sendBtn" onclick="customerProcess()">
+              <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            </button>
+          </div>
+          <div id="customer-actionArea" style="display:none;flex-direction:column;gap:8px;"></div>
+        </div>
+      </div>
+
+      <div class="page" id="page-contacts">
+        <div class="page-scroll">
+          <div class="filter-card">
+            <div class="search-wrap"><span class="search-icon">🔍</span><input id="ct-search" class="search-input" placeholder="Name, company, mobile, city..." oninput="ctApply()"></div>
+            <div class="g2 top-gap">
+              <div class="field"><label class="field-label">Status</label><select id="ct-status" class="field-input" onchange="ctApply()"><option value="">All</option><option value="Active" selected>Active</option><option value="Inactive">Inactive</option></select></div>
+              <div class="field"><label class="field-label">City</label><select id="ct-city" class="field-input" onchange="ctApply()"><option value="">All Cities</option></select></div>
+            </div>
+            <div class="g2 top-gap">
+              <div class="field"><label class="field-label">Created By</label><select id="ct-created-by" class="field-input" onchange="ctApply()"><option value="">All Users</option></select></div>
+              <div class="field"><label class="field-label">Created Date</label><input type="date" id="ct-created-date" class="field-input" onchange="ctApply()"></div>
+            </div>
+          </div>
+          <div class="section-header"><span id="ct-count-label" class="section-title">0 customers</span><button class="section-action" onclick="showPage('customer')">+ New Customer</button></div>
+          <div class="section-header"><span id="ct-page-label" class="muted">Page 1</span></div>
+          <div id="ct-list"></div>
+          <div id="ct-pagination" class="g2 top-gap"><button id="ct-prev" class="btn-secondary" onclick="ctPrev()">Prev</button><button id="ct-next" class="btn-primary" onclick="ctNext()">Next</button></div>
+        </div>
+      </div>
+
+      <div class="page" id="page-accounts">
+        <div class="page-scroll">
+          <div class="filter-card">
+            <div class="search-wrap"><span class="search-icon">S</span><input id="acct-search" class="search-input" placeholder="Search account, customer, GST, city..." oninput="accountsApply()"></div>
+          </div>
+          <div class="section-header"><span id="acct-count-label" class="section-title">0 accounts</span><button class="section-action" onclick="showPage('account-new')">+ New Account</button></div>
+          <div id="acct-list"></div>
+        </div>
+      </div>
+
+      <div class="page" id="page-account-new">
+        <div class="page-scroll sale-scroll">
+          <div class="card"><div class="card-header"><div class="card-header-icon">AC</div><span class="card-header-label">Account & Customer</span></div><div class="card-body">
+            <div class="g2"><div class="field"><label class="field-label">Customer Name *</label><input id="acct-name" class="field-input"></div><div class="field"><label class="field-label">Mobile</label><input id="acct-mobile" class="field-input"></div></div>
+            <div class="field"><label class="field-label">Account / Company *</label><input id="acct-company" class="field-input"></div>
+            <div class="g2"><div class="field"><label class="field-label">Customer Type</label><select id="acct-type" class="field-input"></select></div><div class="field"><label class="field-label">Status</label><select id="acct-status" class="field-input"><option>Active</option><option>Inactive</option></select></div></div>
+            <div class="field"><label class="field-label">Address</label><input id="acct-address" class="field-input"></div>
+            <div class="g3"><div class="field"><label class="field-label">City</label><input id="acct-city" class="field-input"></div><div class="field"><label class="field-label">State</label><input id="acct-state" class="field-input"></div><div class="field"><label class="field-label">Zipcode</label><input id="acct-zipcode" class="field-input"></div></div>
+            <div class="field"><label class="field-label">GST</label><input id="acct-gst" class="field-input"></div>
+          </div></div>
+        </div>
+        <div class="action-bar"><button class="btn-secondary" onclick="accountFormReset()">Clear</button><button class="btn-primary" id="acct-save-btn" onclick="accountSubmit()">Save Account</button></div>
+      </div>
+
+      <div class="page" id="page-sales-dash">
+        <div class="page-scroll">
+          <div class="stats-row four">
+            <div class="stat-card" style="--accent:var(--green)"><div class="stat-label">This Month Revenue</div><div class="stat-value green" id="sd-rev">--</div></div>
+            <div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Orders</div><div class="stat-value blue" id="sd-orders">--</div></div>
+            <div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Boxes</div><div class="stat-value orange" id="sd-boxes">--</div></div>
+            <div class="stat-card" style="--accent:var(--purple)"><div class="stat-label">Line Items</div><div class="stat-value purple" id="sd-lines">--</div></div>
+          </div>
+          <div class="section-header"><span class="section-title">Recent Sales</span><button class="section-action" onclick="showPage('sale')">+ New Sale</button></div>
+          <div class="card"><div class="card-body" id="sd-recent"><div class="empty"><p>Loading sales...</p></div></div></div>
+        </div>
+      </div>
+
+      <div class="page" id="page-sale">
+        <div class="page-scroll sale-scroll">
+          <input type="date" id="se-date" class="hidden">
+          <div class="card slide-up">
+            <div class="card-header"><div class="card-header-icon">C</div><span class="card-header-label">Customer</span></div>
+            <div class="card-body">
+              <div class="field"><label class="field-label">Search Customer</label><div class="search-wrap"><span class="search-icon">🔍</span><input list="se-cList" id="se-cSearch" class="search-input" placeholder="Name, company, mobile..." oninput="seSyncCust(this.value)" autocomplete="off"><datalist id="se-cList"></datalist></div></div>
+              <div class="cust-chip hidden" id="se-custChip"><div class="cust-avatar" id="se-custAvatar">?</div><div style="flex:1;min-width:0;"><div class="cust-name-lg" id="se-custName">-</div><div class="cust-meta-sm" id="se-custMeta">-</div></div></div>
+              <div class="g2"><div class="field"><label class="field-label">Full Name *</label><input id="se-cName" class="field-input" placeholder="Customer name"></div><div class="field"><label class="field-label">Mobile *</label><input id="se-cPhone" class="field-input" placeholder="Phone"></div></div>
+              <div class="field"><label class="field-label">Company *</label><input id="se-cCompany" class="field-input" placeholder="Company name"></div>
+            </div>
+          </div>
+          <div class="card slide-up">
+            <div class="card-header"><div class="card-header-icon">P</div><span class="card-header-label">Add Product</span></div>
+            <div class="card-body">
+              <div class="field"><label class="field-label">Packaging Type</label><div class="pkg-toggle"><button type="button" class="pkg-btn active" id="se-btnPkts" onclick="seSetPkg('PACKETS')">Packets</button><button type="button" class="pkg-btn" id="se-btnBox" onclick="seSetPkg('BOX')">Box</button><button type="button" class="pkg-btn" id="se-btnLids" onclick="seSetPkg('LIDS')">Lids</button></div></div>
+              <div class="field"><label class="field-label">Product</label><select id="se-pName" class="field-input" onchange="seOnProd()"><option value="">Select product...</option></select></div>
+              <div class="field" id="se-cupsDiv"><label class="field-label" id="se-cupsLabel">Cups / Packet</label><input type="number" id="se-cups" class="field-input" value="1" min="1" oninput="seRecalc()"></div>
+              <div class="g2"><div class="field"><label class="field-label" id="se-pkgQtyLabel">Packets Qty</label><input type="number" id="se-pkgQty" class="field-input" value="1" min="1"></div><div class="field hidden" id="se-boxDiv"><label class="field-label">Box Qty</label><input type="number" id="se-boxQty" class="field-input" value="1" min="1"></div></div>
+              <div class="field"><label class="field-label">Sale Price / Cup (₹)</label><input type="number" id="se-sPrice" class="field-input" step="0.001" oninput="seRecalc()" placeholder="0.00"></div>
+              <div class="price-info"><div class="price-info-title">Price Breakdown</div><div class="g3"><div class="field"><label class="field-label">Unit</label><input type="number" id="se-uPrice" class="field-input" readonly></div><div class="field"><label class="field-label">List/Pkt</label><input type="number" id="se-listPkt" class="field-input" readonly></div><div class="field"><label class="field-label">Updated/Pkt</label><input type="number" id="se-updPkt" class="field-input green-val" readonly></div></div></div>
+              <button class="btn-dashed" onclick="seAddItem()">+ Add to Order</button>
+            </div>
+          </div>
+          <div class="card slide-up">
+            <div class="card-header"><div class="card-header-icon">O</div><span class="card-header-label">Order Summary</span></div>
+            <div class="card-body">
+              <div id="se-cartBody"><div class="empty"><div class="e-icon">Cart</div><p>No products added yet</p></div></div>
+              <div class="total-bar"><span class="total-label">GRAND TOTAL</span><span class="total-value" id="se-grandTotal">₹0.00</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="se-submitBtn" onclick="seSubmit()">Submit Order</button></div>
+      </div>
+
+      <div class="page" id="page-sales-quote">
+        <div class="page-scroll sale-scroll">
+          <div class="filter-card">
+            <div class="search-wrap"><span class="search-icon">S</span><input id="quote-search" class="search-input" placeholder="Search quote source by customer, company, sale number..." oninput="quoteApply()"></div>
+          </div>
+          <div class="section-header"><span id="quote-count" class="section-title">0 sales</span><button class="section-action" onclick="quoteLoad()">Refresh</button></div>
+          <div id="quote-sales-list"></div>
+          <div id="quote-preview-wrap" class="hidden">
+            <div class="section-header"><span class="section-title">Quote Preview</span><button class="section-action" onclick="quotePrint()">Print</button></div>
+            <div class="quote-preview" id="quote-preview"></div>
+            <div class="g2 top-gap"><button class="btn-secondary" type="button" onclick="quoteShare()">Forward / Share</button><button class="btn-primary" type="button" onclick="quoteCopy()">Copy Text</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="page" id="page-payment">
+        <div class="page-scroll sale-scroll">
+          <div class="card"><div class="card-header"><div class="card-header-icon">C</div><span class="card-header-label">Find Customer</span></div><div class="card-body"><div id="pay-searchWrap"><div class="search-wrap"><span class="search-icon">🔍</span><input id="pay-search" class="search-input" placeholder="Name or mobile..." onkeyup="paySearch(this.value)"></div><div id="pay-results" class="hidden results-list"></div></div><div id="pay-chip" class="cust-chip hidden"><div><div id="pay-chipName" class="cust-name-lg"></div><div id="pay-chipSub" class="cust-meta-sm"></div></div><button class="pill" onclick="payChange()">CHANGE</button></div></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">₹</div><span class="card-header-label">Payment Details</span></div><div class="card-body"><div class="field"><label class="field-label">Amount (₹)</label><input type="number" id="pay-amt" class="field-input amount-input" placeholder="0.00"></div><div class="g2"><div class="field"><label class="field-label">Date</label><input type="date" id="pay-date" class="field-input"></div><div class="field"><label class="field-label">Mode</label><select id="pay-mode" class="field-input"><option>Cash</option><option>PhonePe</option><option>GPay</option><option>Transfer</option></select></div></div></div></div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="pay-saveBtn" onclick="paySubmit()">CONFIRM PAYMENT</button></div>
+      </div>
+
+      <div class="page" id="page-paydash"><div class="page-scroll"><div class="stats-row"><div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Total Collection</div><div class="stat-value green" id="pd-total">₹0</div></div><div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Entries</div><div class="stat-value blue" id="pd-count">0</div></div></div><div class="filter-card"><div class="pill-strip" id="pd-pills"><button class="pill active" onclick="pdSetFilter('today',event)">Today</button><button class="pill" onclick="pdSetFilter('week',event)">Week</button><button class="pill" onclick="pdSetFilter('month',event)">Month</button></div><div class="search-wrap"><span class="search-icon">🔍</span><input id="pd-search" class="search-input" placeholder="Name, company, mobile..." onkeyup="pdApply()"></div></div><div id="pd-list"></div></div></div>
+      <div class="page" id="page-cp-dash">
+        <div class="page-scroll">
+          <div class="stats-row four">
+            <div class="stat-card" style="--accent:var(--green)"><div class="stat-label">This Month</div><div class="stat-value green" id="cpd-month">₹0</div></div>
+            <div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Today</div><div class="stat-value blue" id="cpd-today">₹0</div></div>
+            <div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Entries</div><div class="stat-value orange" id="cpd-count">0</div></div>
+            <div class="stat-card" style="--accent:var(--purple)"><div class="stat-label">Avg Payment</div><div class="stat-value purple" id="cpd-avg">₹0</div></div>
+          </div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">MO</div><span class="card-header-label">Collections by Mode</span></div><div class="card-body" id="cpd-mode-breakdown"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">DY</div><span class="card-header-label">Last 7 Days</span></div><div class="card-body" id="cpd-daily-breakdown"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">RC</div><span class="card-header-label">Recent Customer Payments</span></div><div class="card-body" id="cpd-recent"></div></div>
+        </div>
+      </div>
+
+      <div class="page" id="page-dashboard"><div class="page-scroll"><div class="stats-row three"><div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Revenue</div><div class="stat-value green" id="dash-rev">--</div></div><div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Orders</div><div class="stat-value blue" id="dash-orders">--</div></div><div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Boxes</div><div class="stat-value orange" id="dash-boxes">--</div></div></div><div class="filter-card"><div class="g2"><div class="field"><label class="field-label">Period</label><select id="dash-period" class="field-input"><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="week" selected>This Week</option><option value="month">This Month</option><option value="lastMonth">Last Month</option></select></div><div class="field"><label class="field-label">Pkg Type</label><select id="dash-pkg" class="field-input"><option value="ALL">All Types</option><option value="BOX">Box</option><option value="PACKETS">Packets</option><option value="LIDS">Lids</option></select></div></div><div class="g2 top-gap"><div class="field"><label class="field-label">City</label><select id="dash-city" class="field-input"><option value="ALL">All Cities</option></select></div><div class="field"><label class="field-label">Product</label><select id="dash-prod" class="field-input"><option value="ALL">All Products</option></select></div></div><div class="search-wrap top-gap"><span class="search-icon">🔍</span><input id="dash-search" class="search-input" placeholder="Search company, product, city..." onkeyup="dashFilterTable()"></div><button class="btn-primary top-gap" onclick="dashFetch()">APPLY FILTERS</button></div><div class="table-wrap"><table class="dash-table"><thead><tr><th>Date</th><th>Customer</th><th>City</th><th>Company</th><th>Type</th><th>Product</th><th>Cups/Lids</th><th>Pkts</th><th>Box</th><th>Price</th><th>Total</th><th>Actions</th></tr></thead><tbody id="dash-tbody"></tbody></table></div></div></div>
+      <div class="page" id="page-mom"><div class="page-scroll"><div class="stats-row"><div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Total Revenue</div><div class="stat-value blue" id="mom-rev">₹0</div></div><div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Total Boxes</div><div class="stat-value green" id="mom-boxes">0</div></div></div><div class="filter-card"><div class="g2"><div class="field"><label class="field-label">Period</label><select id="mom-period" class="field-input"><option value="last_6_months" selected>Last 6 Months</option><option value="this_year">This Year</option><option value="last_year">Last Year</option></select></div><div class="field"><label class="field-label">Company</label><select id="mom-company" class="field-input"><option value="">All Companies</option></select></div></div><div class="field top-gap"><label class="field-label">Product</label><select id="mom-product" class="field-input"><option value="">All Products</option></select></div><button class="btn-primary top-gap" onclick="momFetch()">REFRESH</button></div><div class="chart-box" id="mom-chart-rev"></div><div class="chart-box" id="mom-chart-boxes"></div></div></div>
+      <div class="page" id="page-matrix"><div class="page-scroll"><div class="filter-card"><div class="search-wrap"><span class="search-icon">🔍</span><input id="matrix-search" class="search-input" placeholder="Filter company..." onkeyup="matrixFilter()"></div></div><div id="matrix-loader" class="empty"><p>Loading matrix...</p></div><div class="matrix-wrap hidden" id="matrix-wrap"><table class="matrix-table"><thead id="matrix-head"></thead><tbody id="matrix-body"></tbody></table></div></div></div>
+      <div class="page" id="page-insights"><div class="page-scroll"><div class="filter-card"><div class="g2"><div class="field"><label class="field-label">Period</label><select id="ins-period" class="field-input"><option value="this_month" selected>This Month</option><option value="last_month">Last Month</option><option value="last_3_months">Last 3 Months</option><option value="last_6_months">Last 6 Months</option></select></div><div class="field"><label class="field-label">Product</label><select id="ins-product" class="field-input"><option value="">All Products</option></select></div></div><button class="btn-primary top-gap" onclick="insRefresh()">REFRESH</button></div><div class="stats-row"><div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Total Revenue</div><div class="stat-value green" id="ins-rev">₹0</div></div><div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Total Boxes</div><div class="stat-value orange" id="ins-boxes">0</div></div></div><div class="g2"><div class="chart-box" id="ins-rev-pie"></div><div class="chart-box" id="ins-rev-bar"></div></div><div class="g2"><div class="chart-box" id="ins-box-pie"></div><div class="chart-box" id="ins-box-bar"></div></div><div class="card"><div class="card-header"><div class="card-header-icon">D</div><span class="card-header-label">Detailed Breakdown</span></div><div style="overflow-x:auto;"><table class="dash-table"><thead><tr><th>Product</th><th>Revenue (₹)</th><th>Boxes</th><th>Total Units</th><th>Avg ₹/Unit</th></tr></thead><tbody id="ins-tbody"></tbody></table></div></div></div></div>
+
+      <div class="page" id="page-leads"><div class="page-scroll"><div id="leads-alerts"></div><div class="filter-card"><div class="search-wrap"><span class="search-icon">🔍</span><input id="leads-search" class="search-input" placeholder="Name, company, mobile, city..." oninput="leadsApply()"></div><div class="g2 top-gap"><div class="field"><label class="field-label">Status</label><select id="leads-status" class="field-input" onchange="leadsApply()"><option value="ALL">All Statuses</option><option>Cold</option><option>Warm</option><option>Hot</option><option>Converted</option><option>Lost</option></select></div><div class="field"><label class="field-label">Source</label><select id="leads-source" class="field-input" onchange="leadsApply()"><option value="ALL">All Sources</option></select></div></div><div class="g2"><div class="field"><label class="field-label">Type</label><select id="leads-type" class="field-input" onchange="leadsApply()"><option value="ALL">All Types</option></select></div><div class="field"><label class="field-label">City</label><select id="leads-city" class="field-input" onchange="leadsApply()"><option value="ALL">All Cities</option></select></div></div></div><div class="section-header"><span id="leads-count-label" class="section-title">0 leads</span><button class="section-action" onclick="showPage('leads-add')">+ Add Lead</button></div><div id="leads-list"></div></div></div>
+      <div class="page" id="page-leads-add"><div class="page-scroll sale-scroll"><div class="card"><div class="card-header"><div class="card-header-icon">L</div><span class="card-header-label">Lead Details</span></div><div class="card-body"><div class="g2"><div class="field"><label class="field-label">Name *</label><input id="la-name" class="field-input"></div><div class="field"><label class="field-label">Mobile *</label><input id="la-mobile" class="field-input"></div></div><div class="field"><label class="field-label">Company</label><input id="la-company" class="field-input"></div><div class="g2"><div class="field"><label class="field-label">Customer Type</label><input id="la-type" class="field-input"></div><div class="field"><label class="field-label">Lead Status</label><select id="la-status" class="field-input"><option>Cold</option><option>Warm</option><option>Hot</option></select></div></div><div class="g2"><div class="field"><label class="field-label">City</label><input id="la-city" class="field-input"></div><div class="field"><label class="field-label">State</label><input id="la-state" class="field-input"></div></div></div></div><div class="card"><div class="card-header"><div class="card-header-icon">M</div><span class="card-header-label">More Info</span></div><div class="card-body"><div class="g2"><div class="field"><label class="field-label">Source</label><input id="la-source" class="field-input" value="Manual"></div><div class="field"><label class="field-label">Assigned To</label><input id="la-assigned" class="field-input"></div></div><div class="field"><label class="field-label">Follow Up Date</label><input type="date" id="la-followup" class="field-input"></div><div class="field"><label class="field-label">Notes</label><textarea id="la-notes" class="field-input" rows="3"></textarea></div></div></div></div><div class="action-bar"><button class="btn-primary" id="la-saveBtn" onclick="leadSave()">Save Lead</button></div></div>
+      <div class="page" id="page-leads-dash"><div class="page-scroll"><div class="stats-row four"><div class="stat-card" style="--accent:var(--blue)"><div class="stat-label">Total</div><div class="stat-value blue" id="ld-total">0</div></div><div class="stat-card" style="--accent:var(--red)"><div class="stat-label">Hot</div><div class="stat-value red" id="ld-hot">0</div></div><div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Converted</div><div class="stat-value green" id="ld-converted">0</div></div><div class="stat-card" style="--accent:var(--purple)"><div class="stat-label">Conv. Rate</div><div class="stat-value purple" id="ld-rate">0%</div></div></div><div class="card"><div class="card-header"><div class="card-header-icon">S</div><span class="card-header-label">Status Breakdown</span></div><div class="card-body" id="ld-status-bars"></div></div><div class="chart-box" id="ld-source-chart"></div><div class="chart-box" id="ld-city-chart"></div></div></div>
+
+      <div class="page" id="page-finance-dash">
+        <div class="page-scroll">
+          <div class="stats-row four">
+            <div class="stat-card" style="--accent:var(--red)"><div class="stat-label">Expenses</div><div class="stat-value red" id="fin-stat-expenses">₹0</div></div>
+            <div class="stat-card" style="--accent:var(--purple)"><div class="stat-label">Expense Advances</div><div class="stat-value purple" id="fin-stat-advances">₹0</div></div>
+            <div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Salary</div><div class="stat-value orange" id="fin-stat-salary">₹0</div></div>
+            <div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Entries</div><div class="stat-value blue" id="fin-stat-count">0</div></div>
+          </div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">EX</div><span class="card-header-label">Recent Expenses</span></div><div class="card-body" id="fin-recent-expenses"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">SL</div><span class="card-header-label">Recent Salary Payments</span></div><div class="card-body" id="fin-recent-salary"></div></div>
+        </div>
+      </div>
+      <div class="page" id="page-fin-expenses"><div class="page-scroll"><div class="filter-card"><div class="search-wrap"><span class="search-icon">S</span><input id="fin-exp-search" class="search-input" placeholder="Search expenses..." oninput="finExpenseApply()"></div></div><div class="section-header"><span id="fin-exp-count" class="section-title">0 expenses</span><button class="section-action" onclick="showPage('fin-expense-new')">+ New Expense</button></div><div id="fin-exp-list"></div></div></div>
+      <div class="page" id="page-fin-expense-new"><div class="page-scroll sale-scroll"><div id="fin-exp-edit-banner" class="edit-banner hidden"><span id="fin-exp-edit-label">Editing expense</span><button type="button" onclick="finExpenseReset()">Cancel</button></div><div class="card"><div class="card-header"><div class="card-header-icon">EX</div><span class="card-header-label" id="fin-exp-form-title">New Expense</span></div><div class="card-body"><input type="hidden" id="fin-exp-id"><div class="g2"><div class="field"><label class="field-label">Date *</label><input type="date" id="fin-exp-date" class="field-input"></div><div class="field"><label class="field-label">Expense Type *</label><select id="fin-exp-type" class="field-input"></select></div></div><div class="g2"><div class="field"><label class="field-label">Paid To *</label><select id="fin-exp-employee" class="field-input" onchange="finExpenseEmployeeChanged()"><option value="">Select employee...</option></select><input type="hidden" id="fin-exp-paid-to"></div><div class="field"><label class="field-label">Amount *</label><input type="number" id="fin-exp-amount" class="field-input" min="0" step="0.01"></div></div><div class="field"><label class="field-label">Comments</label><textarea id="fin-exp-comments" class="field-input" rows="3"></textarea></div><button class="btn-dashed batch-only" type="button" onclick="finExpenseAddRow()">+ Add Expense Row</button></div></div><div class="card batch-only"><div class="card-header"><div class="card-header-icon">Q</div><span class="card-header-label">Pending Expenses</span></div><div class="card-body"><div id="fin-exp-batch-list"><div class="empty"><p>No expenses added yet.</p></div></div><div class="total-bar"><span class="total-label">BATCH TOTAL</span><span class="total-value" id="fin-exp-batch-total">₹0</span></div></div></div></div><div class="action-bar"><button class="btn-primary" id="fin-exp-submit" onclick="finExpenseSubmit()">Save Expense</button></div></div>
+      <div class="page" id="page-fin-salary"><div class="page-scroll"><div class="filter-card"><div class="search-wrap"><span class="search-icon">S</span><input id="fin-sal-search" class="search-input" placeholder="Search salary payments..." oninput="finSalaryApply()"></div></div><div class="section-header"><span id="fin-sal-count" class="section-title">0 salary payments</span><button class="section-action" onclick="showPage('fin-salary-new')">+ New Salary</button></div><div id="fin-sal-list"></div></div></div>
+      <div class="page" id="page-fin-salary-new"><div class="page-scroll sale-scroll"><div id="fin-sal-edit-banner" class="edit-banner hidden"><span id="fin-sal-edit-label">Editing salary</span><button type="button" onclick="finSalaryReset()">Cancel</button></div><div class="card"><div class="card-header"><div class="card-header-icon">SL</div><span class="card-header-label" id="fin-sal-form-title">New Salary Payment</span></div><div class="card-body"><input type="hidden" id="fin-sal-id"><div class="g2"><div class="field"><label class="field-label">Date *</label><input type="date" id="fin-sal-date" class="field-input"></div><div class="field"><label class="field-label">Employee *</label><select id="fin-sal-employee" class="field-input" onchange="finSalaryEmployeeChanged()"><option value="">Select employee...</option></select></div></div><input type="hidden" id="fin-sal-paid-to"><div class="g2"><div class="field"><label class="field-label">Payment Type</label><select id="fin-sal-type" class="field-input"></select></div><div class="field"><label class="field-label">Amount *</label><input type="number" id="fin-sal-amount" class="field-input" min="0" step="0.01"></div></div><div class="g2"><div class="field"><label class="field-label">Payment Method</label><select id="fin-sal-method" class="field-input"></select></div><div class="field"><label class="field-label">Comments</label><input id="fin-sal-comments" class="field-input"></div></div><button class="btn-dashed batch-only" type="button" onclick="finSalaryAddRow()">+ Add Salary Row</button></div></div><div class="card batch-only"><div class="card-header"><div class="card-header-icon">Q</div><span class="card-header-label">Pending Salary Payments</span></div><div class="card-body"><div id="fin-sal-batch-list"><div class="empty"><p>No salary payments added yet.</p></div></div><div class="total-bar"><span class="total-label">BATCH TOTAL</span><span class="total-value" id="fin-sal-batch-total">₹0</span></div></div></div></div><div class="action-bar"><button class="btn-primary" id="fin-sal-submit" onclick="finSalarySubmit()">Save Salary</button></div></div>
+      <div class="page" id="page-fin-employees"><div class="page-scroll"><div class="filter-card"><div class="search-wrap"><span class="search-icon">S</span><input id="fin-emp-search" class="search-input" placeholder="Search employees..." oninput="finEmployeeApply()"></div></div><div class="section-header"><span id="fin-emp-count" class="section-title">0 employees</span><button class="section-action" onclick="showPage('fin-employee-new')">+ New Employee</button></div><div id="fin-emp-list"></div></div></div>
+      <div class="page" id="page-fin-employee-new"><div class="page-scroll sale-scroll"><div id="fin-emp-edit-banner" class="edit-banner hidden"><span id="fin-emp-edit-label">Editing employee</span><button type="button" onclick="finEmployeeReset()">Cancel</button></div><div class="card"><div class="card-header"><div class="card-header-icon">EM</div><span class="card-header-label" id="fin-emp-form-title">New Employee</span></div><div class="card-body"><input type="hidden" id="fin-emp-id"><div class="field"><label class="field-label">Employee Name *</label><input id="fin-emp-name" class="field-input"></div><div class="g2"><div class="field"><label class="field-label">Role</label><input id="fin-emp-role" class="field-input"></div><div class="field"><label class="field-label">Department</label><select id="fin-emp-dept" class="field-input"></select></div></div><div class="g2"><div class="field"><label class="field-label">Linked Operator</label><select id="fin-emp-operator" class="field-input"><option value="">None</option></select></div><div class="field"><label class="field-label">Status</label><select id="fin-emp-status" class="field-input"></select></div></div><div class="g2"><div class="field"><label class="field-label">Contact</label><input id="fin-emp-contact" class="field-input"></div><div class="field"><label class="field-label">Join Date</label><input type="date" id="fin-emp-join" class="field-input"></div></div><div class="g2"><div class="field"><label class="field-label">Salary Rate</label><input type="number" id="fin-emp-rate" class="field-input" min="0" step="0.01"></div><div class="field"><label class="field-label">Notes</label><input id="fin-emp-notes" class="field-input"></div></div></div></div></div><div class="action-bar"><button class="btn-primary" id="fin-emp-submit" onclick="finEmployeeSubmit()">Save Employee</button></div></div>
+      <div class="page" id="page-fin-advances"><div class="page-scroll"><div class="filter-card"><div class="search-wrap"><span class="search-icon">S</span><input id="fin-adv-search" class="search-input" placeholder="Search expense advances..." oninput="finAdvanceApply()"></div></div><div class="section-header"><span id="fin-adv-count" class="section-title">0 expense advances</span><button class="section-action" onclick="showPage('fin-advance-new')">+ New Expense Advance</button></div><div id="fin-adv-list"></div></div></div>
+      <div class="page" id="page-fin-advance-new"><div class="page-scroll sale-scroll"><div id="fin-adv-edit-banner" class="edit-banner hidden"><span id="fin-adv-edit-label">Editing expense advance</span><button type="button" onclick="finAdvanceReset()">Cancel</button></div><div class="card"><div class="card-header"><div class="card-header-icon">AD</div><span class="card-header-label" id="fin-adv-form-title">New Expense Advance</span></div><div class="card-body"><input type="hidden" id="fin-adv-id"><div class="g2"><div class="field"><label class="field-label">Date *</label><input type="date" id="fin-adv-date" class="field-input"></div><div class="field"><label class="field-label">Paid To *</label><select id="fin-adv-employee" class="field-input" onchange="finAdvanceEmployeeChanged()"><option value="">Select employee...</option></select><input type="hidden" id="fin-adv-paid-to"></div></div><div class="field"><label class="field-label">Amount *</label><input type="number" id="fin-adv-amount" class="field-input" min="0" step="0.01"></div></div></div></div><div class="action-bar"><button class="btn-primary" id="fin-adv-submit" onclick="finAdvanceSubmit()">Save Expense Advance</button></div></div>
+      <div class="page" id="page-prod-dash">
+        <div class="page-scroll">
+          <div class="stats-row four">
+            <div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Products</div><div class="stat-value blue" id="prod-stat-total">0</div></div>
+            <div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Active</div><div class="stat-value green" id="prod-stat-active">0</div></div>
+            <div class="stat-card" style="--accent:var(--blue)"><div class="stat-label">Pricing</div><div class="stat-value blue" id="prod-stat-pricing">0</div></div>
+            <div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Categories</div><div class="stat-value orange" id="prod-stat-cats">0</div></div>
+          </div>
+          <div class="stats-row">
+            <div class="stat-card" style="--accent:var(--purple)"><div class="stat-label">Avg Unit Price</div><div class="stat-value purple" id="prod-stat-avg">-</div></div>
+            <div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Price Range</div><div class="stat-value orange" id="prod-stat-range">-</div></div>
+          </div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">PK</div><span class="card-header-label">By Packaging Type</span></div><div class="card-body" id="prod-dash-by-pkg"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">CA</div><span class="card-header-label">Products by Category</span></div><div class="card-body" id="prod-dash-by-cat"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">PR</div><span class="card-header-label">Recent Products</span></div><div class="card-body" id="prod-dash-recent"></div></div>
+        </div>
+      </div>
+      <div class="page" id="page-prod-list">
+        <div class="page-scroll">
+          <div class="filter-card">
+            <div class="search-wrap"><span class="search-icon">🔍</span><input id="prod-search" class="search-input" placeholder="Search by name, ID, category..." oninput="prodListApply()"></div>
+            <div class="g2 top-gap"><select id="prod-active-filter" class="field-input" onchange="prodListApply()"><option value="">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option></select><select id="prod-cat-filter" class="field-input" onchange="prodListApply()"><option value="">All Categories</option></select></div>
+          </div>
+          <div class="section-header"><span id="prod-count-lbl" class="section-title">0 products</span><button class="section-action" onclick="showPage('prod-new')">+ Add Product</button></div>
+          <div id="prod-list-body"></div>
+        </div>
+      </div>
+      <div class="page" id="page-prod-new">
+        <div class="page-scroll sale-scroll">
+          <div id="prod-edit-banner" class="edit-banner hidden"><span id="prod-edit-label">Editing product</span><button type="button" onclick="resetProdForm()">Cancel</button></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">PR</div><span class="card-header-label" id="prod-form-title">New Product</span></div><div class="card-body">
+            <input type="hidden" id="prod-id-field">
+            <div class="field"><label class="field-label">Product Name *</label><input id="prod-name-field" class="field-input" placeholder="Product name"></div>
+            <div class="field"><label class="field-label">Category *</label><input id="prod-category-field" class="field-input" placeholder="Category"></div>
+            <label class="toggle-row"><span>Active</span><span class="admin-switch"><input type="checkbox" id="prod-active-field" checked><span></span></span></label>
+          </div></div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="prod-submit-btn" onclick="prodSubmit()">Save Product</button></div>
+      </div>
+      <div class="page" id="page-prod-pricing">
+        <div class="page-scroll">
+          <div class="filter-card">
+            <div class="search-wrap"><span class="search-icon">🔍</span><input id="px-search" class="search-input" placeholder="Search by product, price ID..." oninput="pxListApply()"></div>
+            <div class="g2 top-gap"><select id="px-pkg-filter" class="field-input" onchange="pxListApply()"><option value="">All Types</option><option value="PACKETS">Packets</option><option value="BOX">Box</option><option value="LIDS">Lids</option></select><select id="px-status-filter" class="field-input" onchange="pxListApply()"><option value="">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+          </div>
+          <div class="section-header"><span id="px-count-lbl" class="section-title">0 pricing rows</span><button class="section-action" onclick="showPage('prod-px-new')">+ Add Price</button></div>
+          <div id="px-list-body"></div>
+        </div>
+      </div>
+      <div class="page" id="page-prod-px-new">
+        <div class="page-scroll sale-scroll">
+          <div id="px-edit-banner" class="edit-banner hidden"><span id="px-edit-label">Editing price</span><button type="button" onclick="resetPxForm()">Cancel</button></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">PX</div><span class="card-header-label" id="px-form-title">New Pricing Row</span></div><div class="card-body">
+            <input type="hidden" id="px-id-field">
+            <div class="field"><label class="field-label">Product *</label><select id="px-product-field" class="field-input"><option value="">Select product...</option></select></div>
+            <div class="field"><label class="field-label">Packaging Type *</label><select id="px-pkg-field" class="field-input"><option value="">Select type...</option><option value="PACKETS">Packets</option><option value="BOX">Box</option><option value="LIDS">Lids</option></select></div>
+            <div class="g2"><div class="field"><label class="field-label">Unit Price *</label><input type="number" id="px-price-field" class="field-input" step="0.0001" min="0" placeholder="0.00"></div><div class="field"><label class="field-label">Effective From</label><input type="date" id="px-date-field" class="field-input"></div></div>
+            <label class="toggle-row"><span>Active</span><span class="admin-switch"><input type="checkbox" id="px-active-field" checked><span></span></span></label>
+          </div></div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="px-submit-btn" onclick="pxSubmit()">Save Price</button></div>
+      </div>
+      <div class="page" id="page-mdm-dash">
+        <div class="page-scroll">
+          <div class="stats-row four">
+            <div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Vendors</div><div class="stat-value blue" id="mdm-stat-vendors">0</div></div>
+            <div class="stat-card" style="--accent:var(--blue)"><div class="stat-label">Materials</div><div class="stat-value blue" id="mdm-stat-mats">0</div></div>
+            <div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Types</div><div class="stat-value orange" id="mdm-stat-types">0</div></div>
+            <div class="stat-card" style="--accent:var(--purple)"><div class="stat-label">Subtypes</div><div class="stat-value purple" id="mdm-stat-subtypes">0</div></div>
+          </div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">VD</div><span class="card-header-label">Vendors</span></div><div class="card-body" id="mdm-dash-vendors"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">MT</div><span class="card-header-label">Materials by Type</span></div><div class="card-body" id="mdm-dash-by-type"></div></div>
+        </div>
+      </div>
+      <div class="page" id="page-mdm-vendors">
+        <div class="page-scroll">
+          <div class="filter-card"><div class="search-wrap"><span class="search-icon">🔍</span><input id="vendor-search" class="search-input" placeholder="Search vendors..." oninput="vendorListApply()"></div></div>
+          <div class="section-header"><span id="vendor-count-lbl" class="section-title">0 vendors</span><button class="section-action" onclick="showPage('mdm-vendor-new')">+ Add Vendor</button></div>
+          <div id="vendor-list-body"></div>
+        </div>
+      </div>
+      <div class="page" id="page-mdm-vendor-new">
+        <div class="page-scroll sale-scroll">
+          <div id="vendor-edit-banner" class="edit-banner hidden"><span id="vendor-edit-label">Editing vendor</span><button type="button" onclick="resetVendorForm()">Cancel</button></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">VD</div><span class="card-header-label" id="vendor-form-title">New Vendor</span></div><div class="card-body">
+            <input type="hidden" id="vendor-id-field">
+            <div class="field"><label class="field-label">Vendor Name *</label><input id="vendor-name-field" class="field-input" placeholder="Vendor name"></div>
+            <div class="field"><label class="field-label">Contact</label><input id="vendor-contact-field" class="field-input" placeholder="Phone / email"></div>
+            <div class="field"><label class="field-label">Notes</label><input id="vendor-notes-field" class="field-input" placeholder="Notes"></div>
+          </div></div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="vendor-submit-btn" onclick="vendorSubmit()">Save Vendor</button></div>
+      </div>
+      <div class="page" id="page-mdm-types">
+        <div class="page-scroll">
+          <div class="card"><div class="card-header"><div class="card-header-icon">MT</div><span class="card-header-label" id="type-form-title">Material Type</span></div><div class="card-body">
+            <input type="hidden" id="type-id-field">
+            <div class="field"><label class="field-label">Type Name *</label><input id="type-name-field" class="field-input" placeholder="e.g. Blanks"></div>
+            <button class="btn-primary" id="type-submit-btn" onclick="typeSubmit()">Save Type</button>
+          </div></div>
+          <div class="section-header"><span id="types-count-lbl" class="section-title">0 types</span><button class="section-action" onclick="typeNew()">+ Type</button></div>
+          <div id="types-list-body"></div>
+        </div>
+      </div>
+      <div class="page" id="page-mdm-subtypes">
+        <div class="page-scroll">
+          <div class="card"><div class="card-header"><div class="card-header-icon">ST</div><span class="card-header-label" id="subtype-form-title">Subtype</span></div><div class="card-body">
+            <input type="hidden" id="subtype-id-field">
+            <div class="field"><label class="field-label">Subtype Name *</label><input id="subtype-name-field" class="field-input" placeholder="e.g. ITC - Sharp"></div>
+            <button class="btn-primary" id="subtype-submit-btn" onclick="subtypeSubmit()">Save Subtype</button>
+          </div></div>
+          <div class="section-header"><span id="subtypes-count-lbl" class="section-title">0 subtypes</span><button class="section-action" onclick="subtypeNew()">+ Sub Type</button></div>
+          <div id="subtypes-list-body"></div>
+        </div>
+      </div>
+      <div class="page" id="page-mdm-materials">
+        <div class="page-scroll">
+          <div class="filter-card"><div class="search-wrap"><span class="search-icon">🔍</span><input id="mat-search" class="search-input" placeholder="Search materials..." oninput="matListApply()"></div><select id="mat-type-filter" class="field-input top-gap" onchange="matListApply()"></select></div>
+          <div class="section-header"><span id="mat-count-lbl" class="section-title">0 materials</span><button class="section-action" onclick="showPage('mdm-mat-new')">+ Add Material</button></div>
+          <div id="mat-list-body"></div>
+        </div>
+      </div>
+      <div class="page" id="page-mdm-mat-new">
+        <div class="page-scroll sale-scroll">
+          <div id="mat-edit-banner" class="edit-banner hidden"><span id="mat-edit-label">Editing material</span><button type="button" onclick="resetMatForm()">Cancel</button></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">MR</div><span class="card-header-label" id="mat-form-title">New Material</span></div><div class="card-body">
+            <input type="hidden" id="mat-id-field">
+            <div class="field"><label class="field-label">Material Name *</label><input id="mat-name-field" class="field-input" placeholder="Material name"></div>
+            <div class="field"><label class="field-label">Material Type *</label><select id="mat-type-field" class="field-input"><option value="">Select type...</option></select></div>
+            <div class="field"><label class="field-label">Notes</label><input id="mat-notes-field" class="field-input" placeholder="Notes"></div>
+          </div></div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="mat-submit-btn" onclick="matSubmit()">Save Material</button></div>
+      </div>
+      <div class="page" id="page-mm-dash">
+        <div class="page-scroll">
+          <div class="filter-card">
+            <div class="field">
+              <label class="field-label">Period</label>
+              <select id="mm-dash-period" class="field-input" onchange="mmDashRender()">
+                <option value="this_month" selected>This Month</option>
+                <option value="last_month">Last Month</option>
+                <option value="last_3_months">Last 3 Months</option>
+                <option value="last_year">Last Year</option>
+                <option value="this_year">This Year</option>
+              </select>
+            </div>
+          </div>
+          <div id="mm-dash-report"></div>
+        </div>
+      </div>
+      <div class="page" id="page-mm-purchases">
+        <div class="page-scroll">
+          <div class="filter-card">
+            <div class="search-wrap"><span class="search-icon">🔍</span><input id="pur-search" class="search-input" placeholder="Search vendor, material, purchase ID..." oninput="purListApply()"></div>
+            <div class="g2 top-gap"><select id="pur-vendor-filter" class="field-input" onchange="purListApply()"><option value="">All Vendors</option></select><select id="pur-type-filter" class="field-input" onchange="purListApply()"><option value="">All Types</option></select></div>
+          </div>
+          <div class="section-header"><span id="pur-count-lbl" class="section-title">0 purchases</span><button class="section-action" onclick="showPage('mm-pur-new')">+ New Purchase</button></div>
+          <div id="pur-list-body"></div>
+        </div>
+      </div>
+      <div class="page" id="page-mm-pur-new">
+        <div class="page-scroll sale-scroll">
+          <div id="pur-edit-banner" class="edit-banner hidden"><span id="pur-edit-label">Editing purchase</span><button type="button" onclick="resetPurForm()">Cancel</button></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">PO</div><span class="card-header-label" id="pur-form-title">New Purchase</span></div><div class="card-body">
+            <input type="hidden" id="pur-id-field">
+            <div class="g2"><div class="field"><label class="field-label">Date *</label><input type="date" id="pur-date-field" class="field-input"></div><div class="field"><label class="field-label">Trip ID</label><input id="pur-trip-field" class="field-input" placeholder="Optional"></div></div>
+            <div class="field"><label class="field-label">Vendor *</label><select id="pur-vendor-field" class="field-input"><option value="">Select vendor...</option></select></div>
+            <div class="field"><label class="field-label">Material *</label><select id="pur-mat-field" class="field-input" onchange="purMatChanged()"><option value="">Select material...</option></select></div>
+            <div class="g2"><div class="field"><label class="field-label">Material Type</label><input id="pur-mat-type-display" class="field-input" readonly></div><div class="field"><label class="field-label">Subtype</label><select id="pur-subtype-field" class="field-input"><option value="">None</option></select></div></div>
+            <div class="g3"><div class="field"><label class="field-label">Qty</label><input type="number" id="pur-qty-field" class="field-input" step="0.01" min="0" oninput="purCalc()"></div><div class="field"><label class="field-label">Total KG</label><input type="number" id="pur-kg-field" class="field-input" step="0.01" min="0" oninput="purCalc()"></div><div class="field"><label class="field-label">Blanks / KG</label><input type="number" id="pur-bpkg-field" class="field-input" step="0.01" min="0"></div></div>
+            <div class="g2"><div class="field"><label class="field-label">Cost / KG *</label><input type="number" id="pur-cost-field" class="field-input" step="0.01" min="0" oninput="purCalc()"></div><div class="field"><label class="field-label">Total Amount</label><input type="number" id="pur-total-field" class="field-input" step="0.01"></div></div>
+            <div class="field"><label class="field-label">Notes</label><input id="pur-notes-field" class="field-input" placeholder="Notes"></div>
+            <button class="btn-dashed batch-only" type="button" onclick="purAddRow()">+ Add Purchase Row</button>
+          </div></div>
+          <div class="card batch-only"><div class="card-header"><div class="card-header-icon">Q</div><span class="card-header-label">Pending Purchases</span></div><div class="card-body"><div id="pur-batch-list"><div class="empty"><p>No purchases added yet.</p></div></div><div class="total-bar"><span class="total-label">BATCH TOTAL</span><span class="total-value" id="pur-batch-total">₹0</span></div></div></div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="pur-submit-btn" onclick="purSubmit()">Save Purchase</button></div>
+      </div>
+      <div class="page" id="page-mm-payments">
+        <div class="page-scroll">
+          <div class="filter-card"><div class="search-wrap"><span class="search-icon">🔍</span><input id="payv-search" class="search-input" placeholder="Search vendor, method, payment ID..." oninput="payvListApply()"></div><select id="payv-vendor-filter" class="field-input top-gap" onchange="payvListApply()"><option value="">All Vendors</option></select></div>
+          <div class="section-header"><span id="payv-count-lbl" class="section-title">0 payments</span><button class="section-action" onclick="showPage('mm-pay-new')">+ New Payment</button></div>
+          <div id="payv-list-body"></div>
+        </div>
+      </div>
+      <div class="page" id="page-mm-pay-new">
+        <div class="page-scroll sale-scroll">
+          <div id="payv-edit-banner" class="edit-banner hidden"><span id="payv-edit-label">Editing payment</span><button type="button" onclick="resetPayvForm()">Cancel</button></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">VP</div><span class="card-header-label" id="payv-form-title">Vendor Payment</span></div><div class="card-body">
+            <input type="hidden" id="payv-id-field">
+            <div class="field"><label class="field-label">Date *</label><input type="date" id="payv-date-field" class="field-input"></div>
+            <div class="field"><label class="field-label">Vendor *</label><select id="payv-vendor-field" class="field-input"><option value="">Select vendor...</option></select></div>
+            <div class="g2"><div class="field"><label class="field-label">Amount *</label><input type="number" id="payv-amount-field" class="field-input" step="0.01" min="0"></div><div class="field"><label class="field-label">Method *</label><select id="payv-method-field" class="field-input"><option value="">Select...</option><option>Cash</option><option>GPay</option><option>RTGS</option><option>IMPS</option><option>Paytm</option><option>PhonePe</option><option>Online/Deposit</option><option>Unspecified</option></select></div></div>
+            <div class="field"><label class="field-label">Notes</label><input id="payv-notes-field" class="field-input" placeholder="Notes"></div>
+          </div></div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="payv-submit-btn" onclick="payvSubmit()">Save Payment</button></div>
+      </div>
+      <div class="page" id="page-pm-dash">
+        <div class="page-scroll">
+          <div class="filter-card"><div class="field"><label class="field-label">Period</label><select id="pm-dash-period" class="field-input" onchange="pmDashRender()"><option value="this_month" selected>This Month</option><option value="last_month">Last Month</option><option value="last_3_months">Last 3 Months</option><option value="this_year">This Year</option><option value="all">All Time</option></select></div></div>
+          <div class="stats-row">
+            <div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Total Boxes</div><div class="stat-value green" id="pm-stat-boxes">0</div></div>
+            <div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Total Packets</div><div class="stat-value blue" id="pm-stat-packets">0</div></div>
+            <div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Total Cups</div><div class="stat-value orange" id="pm-stat-cups">0</div></div>
+            <div class="stat-card" style="--accent:var(--purple)"><div class="stat-label">Total Blanks</div><div class="stat-value purple" id="pm-stat-blanks">0</div></div>
+            <div class="stat-card" style="--accent:var(--red)"><div class="stat-label">Total Bottom</div><div class="stat-value red" id="pm-stat-bottom">0</div></div>
+          </div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">PR</div><span class="card-header-label">Recent Production Runs</span></div><div class="card-body" id="pm-dash-runs"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">MU</div><span class="card-header-label">Recent Material Usage</span></div><div class="card-body" id="pm-dash-usage"></div></div>
+        </div>
+      </div>
+      <div class="page" id="page-pm-runs">
+        <div class="page-scroll">
+          <div class="filter-card"><div class="search-wrap"><span class="search-icon">🔍</span><input id="pm-run-search" class="search-input" placeholder="Search product, machine, operator..." oninput="pmRunApply()"></div><div class="g2 top-gap"><select id="pm-run-period" class="field-input" onchange="pmRunApply()"><option value="this_month" selected>This Month</option><option value="last_month">Last Month</option><option value="last_3_months">Last 3 Months</option><option value="this_year">This Year</option><option value="all">All Time</option></select><select id="pm-run-status" class="field-input" onchange="pmRunApply()"><option value="">All Status</option><option>Completed</option><option>In Progress</option><option>Stopped</option><option>Pending</option></select></div><select id="pm-run-machine" class="field-input top-gap" onchange="pmRunApply()"><option value="">All Machines</option></select></div>
+          <div class="section-header"><span id="pm-run-count" class="section-title">0 runs</span><button class="section-action" onclick="showPage('pm-run-new')">+ New Run</button></div>
+          <div id="pm-run-list"></div>
+        </div>
+      </div>
+      <div class="page" id="page-pm-run-new">
+        <div class="page-scroll sale-scroll">
+          <div id="pm-run-edit-banner" class="edit-banner hidden"><span id="pm-run-edit-label">Editing run</span><button type="button" onclick="resetPmRunForm()">Cancel</button></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">PR</div><span class="card-header-label" id="pm-run-form-title">New Production Run</span></div><div class="card-body">
+            <input type="hidden" id="pm-run-id">
+            <div class="g2"><div class="field"><label class="field-label">Date *</label><input type="date" id="pm-run-date" class="field-input"></div><div class="field"><label class="field-label">Shift *</label><select id="pm-run-shift" class="field-input"><option value="">Select...</option><option>Morning</option><option>Evening</option><option>Night</option></select></div></div>
+            <div class="field"><label class="field-label">Product *</label><select id="pm-run-product" class="field-input"><option value="">Select product...</option></select></div>
+            <div class="g3"><div class="field"><label class="field-label">Cups / Packet *</label><input type="number" id="pm-run-cpp" class="field-input" min="0" oninput="pmRunCalc()"></div><div class="field"><label class="field-label">Packets Qty *</label><input type="number" id="pm-run-packets" class="field-input" min="0" oninput="pmRunCalc()"></div><div class="field"><label class="field-label">Box Qty</label><input type="number" id="pm-run-boxes" class="field-input" min="0" oninput="pmRunCalc()"></div></div>
+            <div class="field"><label class="field-label">Total Cups</label><input type="number" id="pm-run-total" class="field-input" readonly></div>
+            <div class="g2"><div class="field"><label class="field-label">Machine *</label><select id="pm-run-machine-field" class="field-input"><option value="">Select machine...</option></select></div><div class="field"><label class="field-label">Operator *</label><select id="pm-run-operator" class="field-input"><option value="">Select operator...</option></select></div></div>
+            <div class="field"><label class="field-label">Status *</label><select id="pm-run-status-field" class="field-input"><option>Completed</option><option>In Progress</option><option>Stopped</option><option>Pending</option></select></div>
+            <div class="field"><label class="field-label">Notes</label><input id="pm-run-notes" class="field-input" placeholder="Notes"></div>
+            <button class="btn-dashed batch-only" type="button" onclick="pmRunAddRow()">+ Add Run Row</button>
+          </div></div>
+          <div class="card batch-only"><div class="card-header"><div class="card-header-icon">Q</div><span class="card-header-label">Pending Runs</span></div><div class="card-body"><div id="pm-run-batch-list"><div class="empty"><p>No runs added yet.</p></div></div><div class="total-bar"><span class="total-label">TOTAL CUPS</span><span class="total-value" id="pm-run-batch-total">0</span></div></div></div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="pm-run-submit" onclick="pmRunSubmit()">Save Run</button></div>
+      </div>
+      <div class="page" id="page-pm-usage">
+        <div class="page-scroll">
+          <div class="filter-card"><div class="search-wrap"><span class="search-icon">🔍</span><input id="pm-usage-search" class="search-input" placeholder="Search material, machine, operator..." oninput="pmUsageApply()"></div><div class="g2 top-gap"><select id="pm-usage-period" class="field-input" onchange="pmUsageApply()"><option value="this_month" selected>This Month</option><option value="last_month">Last Month</option><option value="last_3_months">Last 3 Months</option><option value="this_year">This Year</option><option value="all">All Time</option></select><select id="pm-usage-material" class="field-input" onchange="pmUsageApply()"><option value="">All Materials</option></select></div></div>
+          <div class="section-header"><span id="pm-usage-count" class="section-title">0 usage logs</span><button class="section-action" onclick="showPage('pm-usage-new')">+ Add Usage</button></div>
+          <div id="pm-usage-list"></div>
+        </div>
+      </div>
+      <div class="page" id="page-pm-usage-new">
+        <div class="page-scroll sale-scroll">
+          <div id="pm-usage-edit-banner" class="edit-banner hidden"><span id="pm-usage-edit-label">Editing usage</span><button type="button" onclick="resetPmUsageForm()">Cancel</button></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">MU</div><span class="card-header-label" id="pm-usage-form-title">Log Material Usage</span></div><div class="card-body">
+            <input type="hidden" id="pm-usage-id">
+            <div class="g2"><div class="field"><label class="field-label">Date *</label><input type="date" id="pm-usage-date" class="field-input"></div><div class="field"><label class="field-label">Production ID</label><input id="pm-usage-prod-id" class="field-input" placeholder="Optional"></div></div>
+            <div class="field"><label class="field-label">Material *</label><select id="pm-usage-material-field" class="field-input" onchange="pmUsageMaterialChanged()"><option value="">Select material...</option></select></div>
+            <div class="g2"><div class="field"><label class="field-label">Material Type</label><input id="pm-usage-type" class="field-input" readonly></div><div class="field"><label class="field-label">Unit</label><select id="pm-usage-unit" class="field-input"><option>KG</option><option>Rolls</option><option>Pcs</option><option>Ltrs</option><option>Bags</option></select></div></div>
+            <div class="field"><label class="field-label">Qty Used *</label><input type="number" id="pm-usage-qty" class="field-input" step="0.01" min="0"></div>
+            <div class="g2"><div class="field"><label class="field-label">Machine *</label><select id="pm-usage-machine" class="field-input"><option value="">Select machine...</option></select></div><div class="field"><label class="field-label">Operator *</label><select id="pm-usage-operator" class="field-input"><option value="">Select operator...</option></select></div></div>
+            <div class="field"><label class="field-label">Shift *</label><select id="pm-usage-shift" class="field-input"><option value="">Select...</option><option>Morning</option><option>Evening</option><option>Night</option></select></div>
+            <div class="field"><label class="field-label">Notes</label><input id="pm-usage-notes" class="field-input" placeholder="Notes"></div>
+            <button class="btn-dashed batch-only" type="button" onclick="pmUsageAddRow()">+ Add Usage Row</button>
+          </div></div>
+          <div class="card batch-only"><div class="card-header"><div class="card-header-icon">Q</div><span class="card-header-label">Pending Usage</span></div><div class="card-body"><div id="pm-usage-batch-list"><div class="empty"><p>No usage rows added yet.</p></div></div><div class="total-bar"><span class="total-label">ROWS</span><span class="total-value" id="pm-usage-batch-total">0</span></div></div></div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="pm-usage-submit" onclick="pmUsageSubmit()">Save Usage</button></div>
+      </div>
+      <div class="page" id="page-rm-dash">
+        <div class="page-scroll">
+          <div class="stats-row four"><div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Machines</div><div class="stat-value blue" id="rm-stat-machines">0</div></div><div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Active Machines</div><div class="stat-value green" id="rm-stat-active-machines">0</div></div><div class="stat-card" style="--accent:var(--purple)"><div class="stat-label">Operators</div><div class="stat-value purple" id="rm-stat-operators">0</div></div><div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Active Operators</div><div class="stat-value orange" id="rm-stat-active-operators">0</div></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">MC</div><span class="card-header-label">Machines</span></div><div class="card-body" id="rm-dash-machines"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">OP</div><span class="card-header-label">Operators</span></div><div class="card-body" id="rm-dash-operators"></div></div>
+        </div>
+      </div>
+      <div class="page" id="page-rm-machines">
+        <div class="page-scroll"><div class="filter-card"><div class="search-wrap"><span class="search-icon">🔍</span><input id="rm-machine-search" class="search-input" placeholder="Search machines..." oninput="rmMachineApply()"></div><select id="rm-machine-status" class="field-input top-gap" onchange="rmMachineApply()"><option value="">All Status</option><option>Active</option><option>Inactive</option><option>Maintenance</option></select></div><div class="section-header"><span id="rm-machine-count" class="section-title">0 machines</span><button class="section-action" onclick="showPage('rm-machine-new')">+ Add Machine</button></div><div id="rm-machine-list"></div></div>
+      </div>
+      <div class="page" id="page-rm-machine-new">
+        <div class="page-scroll sale-scroll"><div id="rm-machine-edit-banner" class="edit-banner hidden"><span id="rm-machine-edit-label">Editing machine</span><button type="button" onclick="resetRmMachineForm()">Cancel</button></div><div class="card"><div class="card-header"><div class="card-header-icon">MC</div><span class="card-header-label" id="rm-machine-form-title">New Machine</span></div><div class="card-body"><input type="hidden" id="rm-machine-id"><div class="field"><label class="field-label">Machine Name *</label><input id="rm-machine-name" class="field-input"></div><div class="g2"><div class="field"><label class="field-label">Type</label><input id="rm-machine-type" class="field-input"></div><div class="field"><label class="field-label">Status</label><select id="rm-machine-status-field" class="field-input"><option>Active</option><option>Inactive</option><option>Maintenance</option></select></div></div><div class="g2"><div class="field"><label class="field-label">Capacity / Shift</label><input type="number" id="rm-machine-capacity" class="field-input" min="0"></div><div class="field"><label class="field-label">Location</label><input id="rm-machine-location" class="field-input"></div></div><div class="field"><label class="field-label">Last Maintenance</label><input type="date" id="rm-machine-maint" class="field-input"></div><div class="field"><label class="field-label">Notes</label><input id="rm-machine-notes" class="field-input"></div></div></div></div>
+        <div class="action-bar"><button class="btn-primary" id="rm-machine-submit" onclick="rmMachineSubmit()">Save Machine</button></div>
+      </div>
+      <div class="page" id="page-rm-operators">
+        <div class="page-scroll"><div class="filter-card"><div class="search-wrap"><span class="search-icon">🔍</span><input id="rm-operator-search" class="search-input" placeholder="Search operators..." oninput="rmOperatorApply()"></div><div class="g2 top-gap"><select id="rm-operator-shift" class="field-input" onchange="rmOperatorApply()"><option value="">All Shifts</option><option>Morning</option><option>Evening</option><option>Night</option></select><select id="rm-operator-status" class="field-input" onchange="rmOperatorApply()"><option value="">All Status</option><option>Active</option><option>Inactive</option></select></div></div><div class="section-header"><span id="rm-operator-count" class="section-title">0 operators</span><button class="section-action" onclick="showPage('rm-operator-new')">+ Add Operator</button></div><div id="rm-operator-list"></div></div>
+      </div>
+      <div class="page" id="page-rm-operator-new">
+        <div class="page-scroll sale-scroll"><div id="rm-operator-edit-banner" class="edit-banner hidden"><span id="rm-operator-edit-label">Editing operator</span><button type="button" onclick="resetRmOperatorForm()">Cancel</button></div><div class="card"><div class="card-header"><div class="card-header-icon">OP</div><span class="card-header-label" id="rm-operator-form-title">New Operator</span></div><div class="card-body"><input type="hidden" id="rm-operator-id"><div class="field"><label class="field-label">Operator Name *</label><input id="rm-operator-name" class="field-input"></div><div class="g2"><div class="field"><label class="field-label">Role</label><input id="rm-operator-role" class="field-input"></div><div class="field"><label class="field-label">Shift</label><select id="rm-operator-shift-field" class="field-input"><option>Morning</option><option>Evening</option><option>Night</option></select></div></div><div class="g2"><div class="field"><label class="field-label">Status</label><select id="rm-operator-status-field" class="field-input"><option>Active</option><option>Inactive</option></select></div><div class="field"><label class="field-label">Contact</label><input id="rm-operator-contact" class="field-input"></div></div><div class="field"><label class="field-label">Join Date</label><input type="date" id="rm-operator-join" class="field-input"></div><div class="field"><label class="field-label">Notes</label><input id="rm-operator-notes" class="field-input"></div></div></div></div>
+        <div class="action-bar"><button class="btn-primary" id="rm-operator-submit" onclick="rmOperatorSubmit()">Save Operator</button></div>
+      </div>
+      <div class="page" id="page-admin-dash">
+        <div class="page-scroll">
+          <div class="stats-row four">
+            <div class="stat-card" style="--accent:var(--teal)"><div class="stat-label">Total Users</div><div class="stat-value blue" id="admin-stat-users">0</div></div>
+            <div class="stat-card" style="--accent:var(--green)"><div class="stat-label">Active Users</div><div class="stat-value green" id="admin-stat-active">0</div></div>
+            <div class="stat-card" style="--accent:var(--orange)"><div class="stat-label">Active Sessions</div><div class="stat-value orange" id="admin-stat-sessions">0</div></div>
+            <div class="stat-card" style="--accent:var(--red)"><div class="stat-label">Failed Logins Today</div><div class="stat-value red" id="admin-stat-failed">0</div></div>
+          </div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">LG</div><span class="card-header-label">Recent Login Activity</span></div><div class="card-body" id="admin-login-list"></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">AP</div><span class="card-header-label">Application Modules</span></div><div class="card-body" id="admin-module-summary"></div></div>
+        </div>
+      </div>
+      <div class="page" id="page-admin-users">
+        <div class="page-scroll">
+          <div class="filter-card">
+            <div class="search-wrap"><span class="search-icon">S</span><input id="admin-user-search" class="search-input" placeholder="Search username, name, role..." oninput="adminUserApply()"></div>
+            <div class="g2 top-gap">
+              <select id="admin-user-role-filter" class="field-input" onchange="adminUserApply()"><option value="">All Roles</option><option value="super_admin">Super Admin</option><option value="admin">Admin</option><option value="manager">Manager</option><option value="user">User</option></select>
+              <select id="admin-user-status-filter" class="field-input" onchange="adminUserApply()"><option value="">All Status</option><option value="active">Active</option><option value="inactive">Inactive</option></select>
+            </div>
+          </div>
+          <div class="section-header"><span id="admin-user-count" class="section-title">0 users</span><button class="section-action" onclick="adminUserNew()">+ New User</button></div>
+          <div id="admin-user-list"></div>
+        </div>
+      </div>
+      <div class="page" id="page-admin-user-new">
+        <div class="page-scroll sale-scroll">
+          <div id="admin-user-edit-banner" class="edit-banner hidden"><span id="admin-user-edit-label">Editing user</span><button type="button" onclick="adminUserNew()">Cancel</button></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">US</div><span class="card-header-label" id="admin-user-form-title">New User</span></div><div class="card-body">
+            <input type="hidden" id="admin-user-id">
+            <div class="g2"><div class="field"><label class="field-label">Username *</label><input id="admin-username" class="field-input" autocomplete="off"></div><div class="field"><label class="field-label">Display Name *</label><input id="admin-display-name" class="field-input"></div></div>
+            <div class="g2"><div class="field"><label class="field-label">Role *</label><select id="admin-role" class="field-input"><option value="user">User</option><option value="manager">Manager</option><option value="admin">Admin</option><option value="super_admin">Super Admin</option></select></div><label class="toggle-row"><span>Status Active</span><span class="admin-switch"><input type="checkbox" id="admin-user-active" checked><span></span></span></label></div>
+            <div class="field" id="admin-password-wrap"><label class="field-label">Temporary Password *</label><input id="admin-password" class="field-input" type="password" autocomplete="new-password" placeholder="Minimum 6 characters"></div>
+          </div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">AP</div><span class="card-header-label">App Access</span></div><div class="card-body"><div id="admin-app-access-grid"></div></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">AC</div><span class="card-header-label">Module Access</span><button class="card-header-action" type="button" onclick="adminSelectAllAccess()">Select All</button></div><div class="card-body"><div id="admin-access-grid"></div></div></div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="admin-user-submit" onclick="adminUserSubmit()">Save User</button></div>
+      </div>
+      <div class="page" id="page-admin-apps">
+        <div class="page-scroll">
+          <div class="section-header"><span class="section-title">Apps</span><span class="muted">Controls hamburger visibility through linked modules</span></div>
+          <div id="admin-apps-only-list"></div>
+        </div>
+      </div>
+      <div class="page" id="page-admin-modules">
+        <div class="page-scroll">
+          <div class="filter-card"><div class="search-wrap"><span class="search-icon">S</span><input id="admin-module-search" class="search-input" placeholder="Search module..." oninput="adminModuleApply()"></div></div>
+          <div class="section-header"><span id="admin-module-count" class="section-title">0 modules</span><button class="section-action" onclick="adminModulesInit()">Refresh</button></div>
+          <div id="admin-module-list"></div>
+        </div>
+      </div>
+      <div class="page" id="page-admin-org">
+        <div class="page-scroll sale-scroll">
+          <div class="card">
+            <div class="card-header"><div class="card-header-icon">OR</div><span class="card-header-label">Organisation Details</span></div>
+            <div class="card-body">
+              <div class="field"><label class="field-label">Company Name *</label><input id="org-company-name" class="field-input" placeholder="Company name"></div>
+              <div class="field"><label class="field-label">Address</label><textarea id="org-address" class="field-input" rows="4" placeholder="Company address"></textarea></div>
+              <div class="g2"><div class="field"><label class="field-label">GST Number</label><input id="org-gst" class="field-input" placeholder="GST number"></div><div class="field"><label class="field-label">Logo URL / Path</label><input id="org-logo" class="field-input" placeholder="./assets/mcm-logo-cropped.png"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="action-bar"><button class="btn-primary" id="org-save-btn" onclick="adminOrgSave()">Save Organisation</button></div>
+      </div>
+      <div class="page" id="page-admin-enums">
+        <div class="page-scroll">
+          <div class="filter-card"><div class="g2"><div class="search-wrap"><span class="search-icon">S</span><input id="admin-enum-search" class="search-input" placeholder="Search values..." oninput="adminEnumApply()"></div><select id="admin-enum-group-filter" class="field-input" onchange="adminEnumApply()"><option value="">All Groups</option></select></div></div>
+          <div class="card"><div class="card-header"><div class="card-header-icon">EV</div><span class="card-header-label" id="admin-enum-form-title">New Dropdown Value</span></div><div class="card-body"><input type="hidden" id="admin-enum-id"><div class="g2"><div class="field"><label class="field-label">Group *</label><input id="admin-enum-group" class="field-input" placeholder="salary_payment_type"></div><div class="field"><label class="field-label">Value *</label><input id="admin-enum-value" class="field-input" placeholder="Salary"></div></div><div class="g2"><div class="field"><label class="field-label">Label</label><input id="admin-enum-label" class="field-input" placeholder="Salary"></div><div class="field"><label class="field-label">Display Order</label><input type="number" id="admin-enum-order" class="field-input" value="100"></div></div><label class="toggle-row"><span>Active</span><span class="admin-switch"><input type="checkbox" id="admin-enum-active" checked><span></span></span></label><div class="field"><label class="field-label">Notes</label><input id="admin-enum-notes" class="field-input"></div></div></div>
+          <div class="action-bar"><button class="btn-secondary" onclick="adminEnumReset()">Clear</button><button class="btn-primary" id="admin-enum-submit" onclick="adminEnumSubmit()">Save Value</button></div>
+          <div class="section-header"><span id="admin-enum-count" class="section-title">0 values</span><button class="section-action" onclick="adminEnumsInit()">Refresh</button></div>
+          <div id="admin-enum-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="bottom-nav" id="salesBottomNav">
+      <button class="nav-item" onclick="navTo('cust-dash')" id="nav-customer"><span class="nav-icon">CU</span><span class="nav-label">Customers</span></button>
+      <button class="nav-item" onclick="navTo('sales-dash')" id="nav-sale"><span class="nav-icon">SA</span><span class="nav-label">Sales</span></button>
+      <button class="nav-item" onclick="navTo('cp-dash')" id="nav-payment"><span class="nav-icon">PY</span><span class="nav-label">Payments</span></button>
+      <button class="nav-item" onclick="navTo('mom')" id="nav-dashboard"><span class="nav-icon">RP</span><span class="nav-label">Reports</span></button>
+    </nav>
+    <nav class="bottom-nav admin-bottom-nav hidden" id="marketingBottomNav">
+      <button class="nav-item" onclick="navTo('leads-dash')" id="nav-marketing-leads"><span class="nav-icon">LD</span><span class="nav-label">Leads</span></button>
+    </nav>
+    <nav class="bottom-nav admin-bottom-nav hidden" id="financeBottomNav">
+      <button class="nav-item" onclick="navTo('finance-dash')" id="nav-finance-dash"><span class="nav-icon">DB</span><span class="nav-label">Dashboard</span></button>
+      <button class="nav-item" onclick="navTo('fin-expenses')" id="nav-finance-expenses"><span class="nav-icon">EX</span><span class="nav-label">Expenses</span></button>
+      <button class="nav-item" onclick="navTo('fin-salary')" id="nav-finance-salary"><span class="nav-icon">SL</span><span class="nav-label">Salary</span></button>
+      <button class="nav-item" onclick="navTo('fin-employees')" id="nav-finance-employees"><span class="nav-icon">EM</span><span class="nav-label">Employees</span></button>
+    </nav>
+    <nav class="bottom-nav admin-bottom-nav hidden" id="leadershipBottomNav">
+      <button class="nav-item" onclick="navTo('leadership-dash')" id="nav-leadership-dash"><span class="nav-icon">LD</span><span class="nav-label">Dashboard</span></button>
+    </nav>
+    <nav class="bottom-nav admin-bottom-nav hidden" id="productsBottomNav">
+      <button class="nav-item" onclick="navTo('prod-dash')" id="nav-prod-dash"><span class="nav-icon">DB</span><span class="nav-label">Dashboard</span></button>
+      <button class="nav-item" onclick="navTo('prod-list')" id="nav-prod-list"><span class="nav-icon">PR</span><span class="nav-label">Products</span></button>
+      <button class="nav-item" onclick="navTo('prod-pricing')" id="nav-prod-pricing"><span class="nav-icon">PX</span><span class="nav-label">Pricing</span></button>
+    </nav>
+    <nav class="bottom-nav mdm-bottom-nav hidden" id="mdmBottomNav">
+      <button class="nav-item" onclick="navTo('mdm-dash')" id="nav-mdm-dash"><span class="nav-icon">DB</span><span class="nav-label">Dashboard</span></button>
+      <button class="nav-item" onclick="navTo('mdm-vendors')" id="nav-mdm-vendors"><span class="nav-icon">VD</span><span class="nav-label">Vendors</span></button>
+      <button class="nav-item" onclick="navTo('mdm-types')" id="nav-mdm-types"><span class="nav-icon">MT</span><span class="nav-label">Types</span></button>
+      <button class="nav-item" onclick="navTo('mdm-subtypes')" id="nav-mdm-subtypes"><span class="nav-icon">ST</span><span class="nav-label">Subtypes</span></button>
+      <button class="nav-item" onclick="navTo('mdm-materials')" id="nav-mdm-materials"><span class="nav-icon">MR</span><span class="nav-label">Materials</span></button>
+    </nav>
+    <nav class="bottom-nav admin-bottom-nav hidden" id="mmBottomNav">
+      <button class="nav-item" onclick="navTo('mm-dash')" id="nav-mm-dash"><span class="nav-icon">DB</span><span class="nav-label">Dashboard</span></button>
+      <button class="nav-item" onclick="navTo('mm-purchases')" id="nav-mm-purchases"><span class="nav-icon">PO</span><span class="nav-label">Purchase</span></button>
+      <button class="nav-item" onclick="navTo('mm-payments')" id="nav-mm-payments"><span class="nav-icon">VP</span><span class="nav-label">Payments</span></button>
+    </nav>
+    <nav class="bottom-nav admin-bottom-nav hidden" id="pmBottomNav">
+      <button class="nav-item" onclick="navTo('pm-dash')" id="nav-pm-dash"><span class="nav-icon">DB</span><span class="nav-label">Dashboard</span></button>
+      <button class="nav-item" onclick="navTo('pm-runs')" id="nav-pm-runs"><span class="nav-icon">PR</span><span class="nav-label">Runs</span></button>
+      <button class="nav-item" onclick="navTo('pm-usage')" id="nav-pm-usage"><span class="nav-icon">MU</span><span class="nav-label">Usage</span></button>
+    </nav>
+    <nav class="bottom-nav admin-bottom-nav hidden" id="rmBottomNav">
+      <button class="nav-item" onclick="navTo('rm-dash')" id="nav-rm-dash"><span class="nav-icon">DB</span><span class="nav-label">Dashboard</span></button>
+      <button class="nav-item" onclick="navTo('rm-machines')" id="nav-rm-machines"><span class="nav-icon">MC</span><span class="nav-label">Machines</span></button>
+      <button class="nav-item" onclick="navTo('rm-operators')" id="nav-rm-operators"><span class="nav-icon">OP</span><span class="nav-label">Operators</span></button>
+    </nav>
+    <nav class="bottom-nav admin-bottom-nav hidden" id="adminBottomNav">
+      <button class="nav-item" onclick="navTo('admin-dash')" id="nav-admin-users"><span class="nav-icon">US</span><span class="nav-label">Users</span></button>
+      <button class="nav-item" onclick="navTo('prod-dash')" id="nav-admin-products"><span class="nav-icon">PR</span><span class="nav-label">Products</span></button>
+      <button class="nav-item" onclick="navTo('mdm-dash')" id="nav-admin-mdm"><span class="nav-icon">MD</span><span class="nav-label">MDM</span></button>
+      <button class="nav-item" onclick="navTo('rm-dash')" id="nav-admin-rm"><span class="nav-icon">RM</span><span class="nav-label">Resources</span></button>
+      <button class="nav-item" onclick="navTo('admin-enums')" id="nav-admin-values"><span class="nav-icon">VL</span><span class="nav-label">Values</span></button>
+    </nav>
+  </main>
+
+  <script src="./ui/app.js"></script>
+</body>
+</html>

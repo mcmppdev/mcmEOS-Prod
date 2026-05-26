@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 88" role="img" aria-labelledby="title">
+  <title>MCM logo</title>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 78 47 12c5-9 18-9 23 0l39 69" stroke="#16455a" stroke-width="18"/>
+    <path d="M25 78 57 22l49 56" stroke="#0b8fa3" stroke-width="10"/>
+    <path d="M105 78 143 12c5-9 18-9 23 0l43 66" stroke="#16455a" stroke-width="18"/>
+    <path d="M119 78 154 22l37 56" stroke="#0b8fa3" stroke-width="10"/>
+    <path d="M65 25c16 31 30 49 45 49 16 0 28-18 44-49" stroke="#16455a" stroke-width="18"/>
+    <path d="M75 26c14 26 25 38 35 38 11 0 21-12 34-38" stroke="#0b8fa3" stroke-width="10"/>
+  </g>
+  <g fill="#0b8fa3" stroke="#16455a" stroke-width="1.8">
+    <circle cx="157" cy="10" r="3.5"/>
+    <circle cx="166" cy="13" r="3.5"/>
+    <circle cx="175" cy="17" r="3.5"/>
+    <circle cx="159" cy="21" r="3.5"/>
+    <circle cx="168" cy="25" r="3.5"/>
+    <circle cx="177" cy="29" r="3.5"/>
+    <circle cx="186" cy="33" r="3.5"/>
+    <circle cx="170" cy="37" r="3.5"/>
+    <circle cx="179" cy="41" r="3.5"/>
+    <circle cx="188" cy="45" r="3.5"/>
+    <circle cx="197" cy="49" r="3.5"/>
+  </g>
+</svg>
