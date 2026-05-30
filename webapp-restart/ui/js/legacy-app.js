@@ -130,6 +130,7 @@ function productPriceRows(lookups) {
       productName: product.name || "",
       packagingType: cleanString_(px.packaging_type),
       unitPrice: Number(px.unit_price || 0),
+      effectiveFrom: px.effective_from || "",
       isActive: product.is_active !== false && px.is_active !== false
     };
   }).filter((p) => p.priceId && p.productName && p.isActive);
@@ -385,7 +386,9 @@ async function getAccounts() {
     city: c.accountCity || c.city || "",
     state: c.accountState || c.state || "",
     zipcode: c.zipcode || "",
-    gstNumber: c.gstNumber || ""
+    gstNumber: c.gstNumber || "",
+    createdAt: c.createdAt || "",
+    updatedAt: c.updatedAt || ""
   }));
 }
 
@@ -3429,3 +3432,5 @@ function leadsDashRender(data) { document.getElementById("ld-total").textContent
 
 if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { document.querySelector(".app-shell").style.height = window.visualViewport.height + "px"; });
 boot();
+
+
