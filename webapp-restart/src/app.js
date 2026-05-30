@@ -1440,8 +1440,8 @@ function liveModuleConfig(moduleKey) {
       dateField: "payment_date",
       titleField: "customer_name_snapshot",
       amountField: "amount_paid",
-      columns: ["payment_id", "payment_date", "cid", "aid", "customer_name_snapshot", "company_name_snapshot", "customer_mobile_snapshot", "amount_paid", "payment_mode"],
-      createFields: ["payment_date", "cid", "aid", "customer_name_snapshot", "company_name_snapshot", "customer_mobile_snapshot", "amount_paid", "payment_mode"],
+      columns: ["payment_id", "payment_date", "cid", "aid", "customer_name_snapshot", "company_name_snapshot", "customer_mobile_snapshot", "amount_paid", "payment_mode", "comments"],
+      createFields: ["payment_date", "cid", "aid", "customer_name_snapshot", "company_name_snapshot", "customer_mobile_snapshot", "amount_paid", "payment_mode", "comments"],
       actorMode: "created_by"
     },
     products: {
