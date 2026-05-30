@@ -400,7 +400,7 @@ async function ensureLeadershipUsageTable() {
       username text,
       user_id text,
       period text,
-      source_env text not null default 'prod',
+      source_env text not null default current_setting('app.source_env'),
       status text not null default 'success',
       remaining_count integer not null default 0,
       created_at timestamptz not null default now()
@@ -410,7 +410,7 @@ async function ensureLeadershipUsageTable() {
     create index if not exists leadership_report_usage_month_status_idx
     on public.leadership_report_usage (month_key, status)
   `);
-  await pool.query("alter table if exists public.leadership_report_usage add column if not exists source_env text not null default 'prod'");
+  await pool.query("alter table if exists public.leadership_report_usage add column if not exists source_env text not null default current_setting('app.source_env')");
   await pool.query("create index if not exists leadership_report_usage_env_month_status_idx on public.leadership_report_usage (source_env, month_key, status)");
 }
 
@@ -1117,7 +1117,7 @@ async function ensureMachineMaintenanceSchema() {
         created_by_name text,
         updated_by_user_id text references public.app_users(user_id),
         updated_by_name text,
-        source_env text not null default coalesce(nullif(current_setting('app.source_env', true), ''), 'prod'),
+        source_env text not null default current_setting('app.source_env'),
         created_at timestamptz not null default now(),
         updated_at timestamptz not null default now()
       )
@@ -5142,6 +5142,10 @@ app.post("/api/live-module/:moduleKey", requireAuth, async (req, res) => {
     } else {
       fields.push("created_by_user_id", "created_by_name", "updated_by_user_id", "updated_by_name");
       values.push(actorUserId, actorName, actorUserId, actorName);
+    }
+    if (cfg.envScoped) {
+      fields.push("source_env");
+      values.push(envTag());
     }
     const params = values.map((_, i) => `$${i + 1}`).join(", ");
     const sql = `

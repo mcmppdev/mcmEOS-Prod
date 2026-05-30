@@ -24,7 +24,20 @@
 const { Pool } = require("pg");
  
 const isProd = process.env.NODE_ENV === "production";
-const APP_ENV = process.env.APP_ENV === "dev" ? "dev" : "prod";
+
+function resolveAppEnv() {
+  const raw = String(process.env.APP_ENV || "").trim().toLowerCase();
+  if (!raw) {
+    if (isProd) {
+      throw new Error("APP_ENV is required when NODE_ENV=production. Set APP_ENV=dev or APP_ENV=prod.");
+    }
+    return "dev";
+  }
+  if (raw === "dev" || raw === "prod") return raw;
+  throw new Error(`Invalid APP_ENV "${process.env.APP_ENV}". Set APP_ENV=dev or APP_ENV=prod.`);
+}
+
+const APP_ENV = resolveAppEnv();
 
 function databaseConnectionString() {
   const raw = String(process.env.DATABASE_URL || "");
@@ -60,8 +73,8 @@ const pool = new Pool({
 });
  
 // ── Environment tag ───────────────────────────────────────────────────────────
-// Set APP_ENV=dev in your dev Vercel project env vars.
-// Leave it unset (or set APP_ENV=prod) in the production project.
+// Set APP_ENV=dev in Dev and APP_ENV=prod in Prod.
+// Production-mode deployments fail fast if APP_ENV is missing or invalid.
  
 if (!isProd) {
   console.log(`[db] APP_ENV = ${APP_ENV}`);
