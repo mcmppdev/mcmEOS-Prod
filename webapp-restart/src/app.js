@@ -560,6 +560,23 @@ async function saveLeadershipSnapshot(cacheKey, section, range, payload, ttlSeco
   return getLeadershipSnapshot(cacheKey);
 }
 
+async function invalidateLeadershipSnapshots(sections) {
+  const uniqueSections = [...new Set((sections || []).filter(Boolean))];
+  if (!uniqueSections.length) return;
+  await ensureLeadershipSnapshotTable();
+  const patterns = uniqueSections.map((section) => `v6|${APP_ENV}|${section}|%`);
+  const whereSql = patterns.map((_, index) => `cache_key like $${index + 1}`).join(" or ");
+  await pool.query(`delete from public.leadership_report_snapshots where ${whereSql}`, patterns);
+}
+
+async function invalidateCustomerDuesSnapshots() {
+  await invalidateLeadershipSnapshots(["customer-dues", "customer-payments", "sales-payments"]);
+}
+
+function affectsCustomerDues(moduleKey) {
+  return ["customers", "payments", "sales"].includes(String(moduleKey || ""));
+}
+
 function pctOf(value, max) {
   const n = Number(value || 0);
   const m = Math.max(Number(max || 0), 1);
@@ -2527,6 +2544,7 @@ app.post("/api/sales/entries", requireAuth, async (req, res) => {
     }
 
     await client.query("commit");
+    await invalidateCustomerDuesSnapshots();
     res.json({ success: true, sale_entry_id: saleEntryId });
   } catch (error) {
     try { await client.query("rollback"); } catch (_err) {}
@@ -2619,6 +2637,7 @@ app.put("/api/sales/entries/:saleEntryId", requireAuth, async (req, res) => {
     }
 
     await client.query("commit");
+    await invalidateCustomerDuesSnapshots();
     res.json({ success: true });
   } catch (error) {
     try { await client.query("rollback"); } catch (_err) {}
@@ -2642,6 +2661,7 @@ app.delete("/api/sales/entries/:saleEntryId", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "Sale entry not found" });
     }
     await client.query("commit");
+    await invalidateCustomerDuesSnapshots();
     res.json({ success: true });
   } catch (error) {
     try { await client.query("rollback"); } catch (_err) {}
@@ -4774,38 +4794,127 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
     if (section === "customer-dues") {
       if (sectionForbidden(req, ["sales", "payments", "customers"])) return res.status(403).json({ error: "Forbidden" });
       const { rows } = await pool.query(`
-        with sales_totals as (
-          select cid, coalesce(company_name_snapshot, 'Unknown') as company_name,
-                 max(customer_name_snapshot) as customer_name,
-                 sum(coalesce(total_amount, 0)) as total_sales
-          from public.sales_entries
-          where source_env = '${APP_ENV}'
-          group by cid, coalesce(company_name_snapshot, 'Unknown')
+        with sales_rows as (
+          select
+            coalesce(
+              nullif(c.cid, ''),
+              nullif(s.cid, ''),
+              nullif(s.aid, ''),
+              nullif(regexp_replace(coalesce(s.customer_mobile_snapshot, ''), '\\D', '', 'g'), ''),
+              nullif(lower(trim(coalesce(s.company_name_snapshot, ''))), ''),
+              'sale:' || s.sale_entry_id
+            ) as customer_key,
+            coalesce(nullif(c.name, ''), nullif(s.customer_name_snapshot, ''), '') as customer_name,
+            coalesce(nullif(c.company, ''), nullif(s.company_name_snapshot, ''), '') as company_name,
+            coalesce(nullif(c.mobile, ''), nullif(s.customer_mobile_snapshot, ''), '') as mobile,
+            coalesce(s.total_amount, 0)::numeric as total_sales,
+            0::numeric as total_paid
+          from public.sales_entries s
+          left join lateral (
+            select c.*
+            from public.contacts c
+            where c.source_env = s.source_env
+              and (
+                (nullif(s.cid, '') is not null and c.cid = s.cid)
+                or (nullif(s.cid, '') is null and nullif(s.aid, '') is not null and c.aid = s.aid)
+                or (
+                  nullif(s.cid, '') is null
+                  and nullif(s.aid, '') is null
+                  and nullif(regexp_replace(coalesce(s.customer_mobile_snapshot, ''), '\\D', '', 'g'), '') is not null
+                  and regexp_replace(coalesce(c.mobile, ''), '\\D', '', 'g') = regexp_replace(coalesce(s.customer_mobile_snapshot, ''), '\\D', '', 'g')
+                )
+              )
+            order by
+              case
+                when nullif(s.cid, '') is not null and c.cid = s.cid then 0
+                when nullif(s.aid, '') is not null and c.aid = s.aid then 1
+                else 2
+              end,
+              c.created_at desc nulls last
+            limit 1
+          ) c on true
+          where s.source_env = $1
         ),
-        payment_totals as (
-          select cid, coalesce(company_name_snapshot, 'Unknown') as company_name,
-                 sum(coalesce(amount_paid, 0)) as total_paid
-          from public.customer_payments
-          where source_env = '${APP_ENV}'
-          group by cid, coalesce(company_name_snapshot, 'Unknown')
+        payment_rows as (
+          select
+            coalesce(
+              nullif(c.cid, ''),
+              nullif(p.cid, ''),
+              nullif(p.aid, ''),
+              nullif(regexp_replace(coalesce(p.customer_mobile_snapshot, ''), '\\D', '', 'g'), ''),
+              nullif(lower(trim(coalesce(p.company_name_snapshot, ''))), ''),
+              'payment:' || p.payment_id
+            ) as customer_key,
+            coalesce(nullif(c.name, ''), nullif(p.customer_name_snapshot, ''), '') as customer_name,
+            coalesce(nullif(c.company, ''), nullif(p.company_name_snapshot, ''), '') as company_name,
+            coalesce(nullif(c.mobile, ''), nullif(p.customer_mobile_snapshot, ''), '') as mobile,
+            0::numeric as total_sales,
+            coalesce(p.amount_paid, 0)::numeric as total_paid
+          from public.customer_payments p
+          left join lateral (
+            select c.*
+            from public.contacts c
+            where c.source_env = p.source_env
+              and (
+                (nullif(p.cid, '') is not null and c.cid = p.cid)
+                or (nullif(p.cid, '') is null and nullif(p.aid, '') is not null and c.aid = p.aid)
+                or (
+                  nullif(p.cid, '') is null
+                  and nullif(p.aid, '') is null
+                  and nullif(regexp_replace(coalesce(p.customer_mobile_snapshot, ''), '\\D', '', 'g'), '') is not null
+                  and regexp_replace(coalesce(c.mobile, ''), '\\D', '', 'g') = regexp_replace(coalesce(p.customer_mobile_snapshot, ''), '\\D', '', 'g')
+                )
+              )
+            order by
+              case
+                when nullif(p.cid, '') is not null and c.cid = p.cid then 0
+                when nullif(p.aid, '') is not null and c.aid = p.aid then 1
+                else 2
+              end,
+              c.created_at desc nulls last
+            limit 1
+          ) c on true
+          where p.source_env = $1
+        ),
+        combined as (
+          select * from sales_rows
+          union all
+          select * from payment_rows
         ),
         due_rows as (
-          select coalesce(s.customer_name, c.name, coalesce(s.company_name, p.company_name), 'Unknown') as customer,
-                 (coalesce(s.total_sales, 0) - coalesce(p.total_paid, 0))::numeric as balance
-          from sales_totals s
-          full outer join payment_totals p on p.cid = s.cid and p.company_name = s.company_name
-          left join public.contacts c on c.cid = coalesce(s.cid, p.cid) and c.source_env = '${APP_ENV}'
+          select
+            customer_key,
+            coalesce(nullif(max(customer_name), ''), nullif(max(company_name), ''), 'Unknown') as customer,
+            nullif(max(company_name), '') as company,
+            nullif(max(mobile), '') as mobile,
+            sum(total_sales)::numeric as total_sales,
+            sum(total_paid)::numeric as total_paid,
+            (sum(total_sales) - sum(total_paid))::numeric as balance
+          from combined
+          group by customer_key
         )
-        select customer,
-               balance,
-               sum(balance) over()::numeric as total_balance
+        select customer, company, mobile, total_sales, total_paid, balance
         from due_rows
         where balance > 0
         order by balance desc
         limit 150
-      `);
-      const dueRows = rows.map((r) => ({ customer: r.customer, balance: Number(r.balance || 0) }));
-      return returnLeadershipReport({ rows: dueRows, totals: { balance: Number(rows[0]?.total_balance || 0) } });
+      `, [envTag()]);
+      const dueRows = rows.map((r) => ({
+        customer: r.customer,
+        company: r.company || "",
+        mobile: r.mobile || "",
+        totalSales: Number(r.total_sales || 0),
+        totalPaid: Number(r.total_paid || 0),
+        balance: Number(r.balance || 0)
+      }));
+      return returnLeadershipReport({
+        rows: dueRows,
+        totals: {
+          totalSales: dueRows.reduce((sum, r) => sum + r.totalSales, 0),
+          totalPaid: dueRows.reduce((sum, r) => sum + r.totalPaid, 0),
+          balance: dueRows.reduce((sum, r) => sum + r.balance, 0)
+        }
+      });
     }
 
     if (section === "production") {
@@ -5125,6 +5234,7 @@ app.post("/api/live-module/:moduleKey", requireAuth, async (req, res) => {
     const payload = req.body || {};
     if (moduleKey === "customers") {
       const row = await createCustomerWithAccount(req, payload);
+      await invalidateLeadershipSnapshots(["customer-dues"]);
       return res.json({ row });
     }
     const actorUserId = req.sessionData.user.userId;
@@ -5154,6 +5264,7 @@ app.post("/api/live-module/:moduleKey", requireAuth, async (req, res) => {
       returning ${cfg.columns.join(", ")}
     `;
     const { rows } = await pool.query(sql, values);
+    if (affectsCustomerDues(moduleKey)) await invalidateCustomerDuesSnapshots();
     res.json({ row: rows[0] });
   } catch (error) {
     res.status(500).json({ error: clientSafeError(error) });
@@ -5171,6 +5282,7 @@ app.put("/api/live-module/:moduleKey/:recordId", requireAuth, async (req, res) =
     if (moduleKey === "customers") {
       const row = await updateCustomerWithAccount(req, recordId, payload);
       if (!row) return res.status(404).json({ error: "Record not found" });
+      await invalidateLeadershipSnapshots(["customer-dues"]);
       return res.json({ row });
     }
     const actorUserId = req.sessionData.user.userId;
@@ -5209,6 +5321,7 @@ app.put("/api/live-module/:moduleKey/:recordId", requireAuth, async (req, res) =
     `;
     const { rows } = await pool.query(sql, values);
     if (!rows.length) return res.status(404).json({ error: "Record not found" });
+    if (affectsCustomerDues(moduleKey)) await invalidateCustomerDuesSnapshots();
     res.json({ row: rows[0] });
   } catch (error) {
     res.status(500).json({ error: clientSafeError(error) });
@@ -5225,6 +5338,7 @@ app.delete("/api/live-module/:moduleKey/:recordId", requireAuth, async (req, res
     const sql = `delete from ${cfg.table} where ${cfg.pk} = $1${cfg.envScoped ? " and source_env = $2" : ""}`;
     const { rowCount } = await pool.query(sql, cfg.envScoped ? [recordId, envTag()] : [recordId]);
     if (!rowCount) return res.status(404).json({ error: "Record not found" });
+    if (affectsCustomerDues(moduleKey)) await invalidateCustomerDuesSnapshots();
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: clientSafeError(error) });
@@ -5283,6 +5397,7 @@ app.post("/api/module/:moduleKey", requireAuth, async (req, res) => {
       returning ${cfg.columns.join(", ")}
     `;
     const { rows } = await pool.query(sql, values);
+    if (affectsCustomerDues(moduleKey)) await invalidateCustomerDuesSnapshots();
     res.json({ row: rows[0] });
   } catch (error) {
     console.error("MODULE_CREATE_ERROR", error);
@@ -5381,6 +5496,7 @@ app.put("/api/module/:moduleKey/:recordId", requireAuth, async (req, res) => {
     `;
     const { rows } = await pool.query(sql, values);
     if (!rows.length) return res.status(404).json({ error: "Record not found" });
+    if (affectsCustomerDues(moduleKey)) await invalidateCustomerDuesSnapshots();
     res.json({ row: rows[0] });
   } catch (error) {
     console.error("MODULE_UPDATE_ERROR", error);
@@ -5398,6 +5514,7 @@ app.delete("/api/module/:moduleKey/:recordId", requireAuth, async (req, res) => 
     if (!modulePermission(req, moduleKey, "delete")) return res.status(403).json({ error: "Forbidden" });
     const sql = `delete from ${cfg.table} where ${cfg.pk} = $1${cfg.envScoped ? " and source_env = $2" : ""}`;
     await pool.query(sql, cfg.envScoped ? [recordId, envTag()] : [recordId]);
+    if (affectsCustomerDues(moduleKey)) await invalidateCustomerDuesSnapshots();
     res.json({ success: true });
   } catch (error) {
     console.error("MODULE_DELETE_ERROR", error);
