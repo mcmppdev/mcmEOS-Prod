@@ -4418,13 +4418,15 @@ app.get("/api/lookups", requireAuth, async (_req, res) => {
         left join lateral (
           select a.*
           from public.accounts a
-          where a.aid = c.aid or a.cid = c.cid
+          where a.source_env = c.source_env
+            and (a.aid = c.aid or a.cid = c.cid)
           order by case when a.aid = c.aid then 0 else 1 end
           limit 1
         ) a on true
+        where c.source_env = $1
         order by c.name asc
         limit 1000
-      `),
+      `, [envTag()]),
       pool.query(`
         select product_id, name, category, is_active
         from public.products
