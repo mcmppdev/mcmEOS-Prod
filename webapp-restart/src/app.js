@@ -4864,6 +4864,14 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
               and (
                 (nullif(s.aid, '') is not null and a.aid = s.aid)
                 or (nullif(s.cid, '') is not null and a.cid = s.cid)
+                or (
+                  nullif(s.cid, '') is null
+                  and nullif(s.aid, '') is null
+                  and nullif(regexp_replace(coalesce(s.customer_mobile_snapshot, ''), '\\D', '', 'g'), '') is null
+                  and lower(trim(coalesce(s.customer_name_snapshot, ''))) = 'other'
+                  and lower(trim(coalesce(s.company_name_snapshot, ''))) = 'other'
+                  and a.aid = 'A075'
+                )
               )
             order by
               case
@@ -4887,6 +4895,14 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                   and nullif(s.aid, '') is null
                   and nullif(regexp_replace(coalesce(s.customer_mobile_snapshot, ''), '\\D', '', 'g'), '') is not null
                   and regexp_replace(coalesce(c.mobile, ''), '\\D', '', 'g') = regexp_replace(coalesce(s.customer_mobile_snapshot, ''), '\\D', '', 'g')
+                )
+                or (
+                  nullif(s.cid, '') is null
+                  and nullif(s.aid, '') is null
+                  and nullif(regexp_replace(coalesce(s.customer_mobile_snapshot, ''), '\\D', '', 'g'), '') is null
+                  and lower(trim(coalesce(s.customer_name_snapshot, ''))) = 'other'
+                  and lower(trim(coalesce(s.company_name_snapshot, ''))) = 'other'
+                  and c.cid = 'C073'
                 )
               )
             order by
@@ -4925,6 +4941,14 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
               and (
                 (nullif(p.aid, '') is not null and a.aid = p.aid)
                 or (nullif(p.cid, '') is not null and a.cid = p.cid)
+                or (
+                  nullif(p.cid, '') is null
+                  and nullif(p.aid, '') is null
+                  and nullif(regexp_replace(coalesce(p.customer_mobile_snapshot, ''), '\\D', '', 'g'), '') is null
+                  and lower(trim(coalesce(p.customer_name_snapshot, ''))) = 'other'
+                  and lower(trim(coalesce(p.company_name_snapshot, ''))) = 'other'
+                  and a.aid = 'A075'
+                )
               )
             order by
               case
@@ -4948,6 +4972,14 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                   and nullif(p.aid, '') is null
                   and nullif(regexp_replace(coalesce(p.customer_mobile_snapshot, ''), '\\D', '', 'g'), '') is not null
                   and regexp_replace(coalesce(c.mobile, ''), '\\D', '', 'g') = regexp_replace(coalesce(p.customer_mobile_snapshot, ''), '\\D', '', 'g')
+                )
+                or (
+                  nullif(p.cid, '') is null
+                  and nullif(p.aid, '') is null
+                  and nullif(regexp_replace(coalesce(p.customer_mobile_snapshot, ''), '\\D', '', 'g'), '') is null
+                  and lower(trim(coalesce(p.customer_name_snapshot, ''))) = 'other'
+                  and lower(trim(coalesce(p.company_name_snapshot, ''))) = 'other'
+                  and c.cid = 'C073'
                 )
               )
             order by
