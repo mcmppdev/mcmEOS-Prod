@@ -1645,6 +1645,61 @@ async function listCustomersWithAccounts() {
   return { summary: summary.rows[0], rows: list.rows };
 }
 
+async function listCustomerPaymentsWithCurrentIdentity(cfg) {
+  await ensureAccountSchema();
+  const [summary, list] = await Promise.all([
+    pool.query(`
+      select
+        count(*)::integer as total_count,
+        coalesce(sum(amount_paid), 0)::numeric as amount_total,
+        count(*) filter (where payment_date >= date_trunc('month', current_date))::integer as month_count
+      from public.customer_payments
+      where source_env = $1
+    `, [envTag()]),
+    pool.query(`
+      select
+        p.payment_id,
+        p.payment_date,
+        p.cid,
+        coalesce(p.aid, a.aid, c.aid) as aid,
+        coalesce(nullif(c.name, ''), nullif(a.contact_name, ''), p.customer_name_snapshot) as customer_name_snapshot,
+        coalesce(nullif(c.company, ''), nullif(a.company, ''), p.company_name_snapshot) as company_name_snapshot,
+        coalesce(nullif(c.mobile, ''), nullif(a.mobile, ''), p.customer_mobile_snapshot) as customer_mobile_snapshot,
+        p.amount_paid,
+        p.payment_mode,
+        p.comments
+      from public.customer_payments p
+      left join public.contacts c on c.source_env = p.source_env and (
+        (nullif(p.cid, '') is not null and c.cid = p.cid)
+        or (nullif(p.cid, '') is null and nullif(p.aid, '') is not null and c.aid = p.aid)
+      )
+      left join lateral (
+        select a.*
+        from public.accounts a
+        where a.source_env = p.source_env
+          and (a.aid = p.aid or a.aid = c.aid or a.cid = p.cid or a.cid = c.cid)
+        order by case when a.aid = p.aid then 0 when a.aid = c.aid then 1 else 2 end
+        limit 1
+      ) a on true
+      where p.source_env = $1
+      order by p.payment_date desc nulls last, p.payment_id desc
+      limit 100
+    `, [envTag()])
+  ]);
+  return {
+    summary: summary.rows[0],
+    rows: list.rows,
+    config: {
+      pk: cfg.pk,
+      titleField: cfg.titleField,
+      amountField: cfg.amountField,
+      dateField: cfg.dateField,
+      columns: cfg.columns,
+      createFields: cfg.createFields
+    }
+  };
+}
+
 async function createCustomerWithAccount(req, payload) {
   await ensureAccountSchema();
   const client = await pool.connect();
@@ -2401,9 +2456,9 @@ app.get("/api/sales/entries", requireAuth, async (req, res) => {
         s.sale_date,
         s.cid,
         coalesce(s.aid, max(a.aid), max(c.aid)) as aid,
-        s.customer_name_snapshot,
-        s.company_name_snapshot,
-        s.customer_mobile_snapshot,
+        coalesce(nullif(max(c.name), ''), nullif(max(a.contact_name), ''), s.customer_name_snapshot) as customer_name_snapshot,
+        coalesce(nullif(max(c.company), ''), nullif(max(a.company), ''), s.company_name_snapshot) as company_name_snapshot,
+        coalesce(nullif(max(c.mobile), ''), nullif(max(a.mobile), ''), s.customer_mobile_snapshot) as customer_mobile_snapshot,
         s.status,
         s.note,
         s.total_amount,
@@ -2436,7 +2491,7 @@ app.get("/api/sales/entries", requireAuth, async (req, res) => {
           order by l.created_at asc
         ) filter (where l.sale_line_id is not null), '[]'::json) as lines
       from public.sales_entries s
-      left join public.contacts c on c.cid = s.cid
+      left join public.contacts c on c.cid = s.cid and c.source_env = s.source_env
       left join lateral (
         select a.*
       from public.accounts a
@@ -4788,18 +4843,36 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
           select
             coalesce(
               nullif(c.cid, ''),
+              nullif(a.cid, ''),
               nullif(s.cid, ''),
+              nullif(a.aid, ''),
               nullif(s.aid, ''),
               nullif(regexp_replace(coalesce(s.customer_mobile_snapshot, ''), '\\D', '', 'g'), ''),
               nullif(lower(trim(coalesce(s.company_name_snapshot, ''))), ''),
               'sale:' || s.sale_entry_id
             ) as customer_key,
-            coalesce(nullif(c.name, ''), nullif(s.customer_name_snapshot, ''), '') as customer_name,
-            coalesce(nullif(c.company, ''), nullif(s.company_name_snapshot, ''), '') as company_name,
-            coalesce(nullif(c.mobile, ''), nullif(s.customer_mobile_snapshot, ''), '') as mobile,
+            coalesce(nullif(c.name, ''), nullif(a.contact_name, ''), nullif(s.customer_name_snapshot, ''), '') as customer_name,
+            coalesce(nullif(c.company, ''), nullif(a.company, ''), nullif(s.company_name_snapshot, ''), '') as company_name,
+            coalesce(nullif(c.mobile, ''), nullif(a.mobile, ''), nullif(s.customer_mobile_snapshot, ''), '') as mobile,
             coalesce(s.total_amount, 0)::numeric as total_sales,
             0::numeric as total_paid
           from public.sales_entries s
+          left join lateral (
+            select a.*
+            from public.accounts a
+            where a.source_env = s.source_env
+              and (
+                (nullif(s.aid, '') is not null and a.aid = s.aid)
+                or (nullif(s.cid, '') is not null and a.cid = s.cid)
+              )
+            order by
+              case
+                when nullif(s.aid, '') is not null and a.aid = s.aid then 0
+                else 1
+              end,
+              a.created_at desc nulls last
+            limit 1
+          ) a on true
           left join lateral (
             select c.*
             from public.contacts c
@@ -4807,6 +4880,8 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
               and (
                 (nullif(s.cid, '') is not null and c.cid = s.cid)
                 or (nullif(s.cid, '') is null and nullif(s.aid, '') is not null and c.aid = s.aid)
+                or (nullif(a.cid, '') is not null and c.cid = a.cid)
+                or (nullif(a.aid, '') is not null and c.aid = a.aid)
                 or (
                   nullif(s.cid, '') is null
                   and nullif(s.aid, '') is null
@@ -4829,18 +4904,36 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
           select
             coalesce(
               nullif(c.cid, ''),
+              nullif(a.cid, ''),
               nullif(p.cid, ''),
+              nullif(a.aid, ''),
               nullif(p.aid, ''),
               nullif(regexp_replace(coalesce(p.customer_mobile_snapshot, ''), '\\D', '', 'g'), ''),
               nullif(lower(trim(coalesce(p.company_name_snapshot, ''))), ''),
               'payment:' || p.payment_id
             ) as customer_key,
-            coalesce(nullif(c.name, ''), nullif(p.customer_name_snapshot, ''), '') as customer_name,
-            coalesce(nullif(c.company, ''), nullif(p.company_name_snapshot, ''), '') as company_name,
-            coalesce(nullif(c.mobile, ''), nullif(p.customer_mobile_snapshot, ''), '') as mobile,
+            coalesce(nullif(c.name, ''), nullif(a.contact_name, ''), nullif(p.customer_name_snapshot, ''), '') as customer_name,
+            coalesce(nullif(c.company, ''), nullif(a.company, ''), nullif(p.company_name_snapshot, ''), '') as company_name,
+            coalesce(nullif(c.mobile, ''), nullif(a.mobile, ''), nullif(p.customer_mobile_snapshot, ''), '') as mobile,
             0::numeric as total_sales,
             coalesce(p.amount_paid, 0)::numeric as total_paid
           from public.customer_payments p
+          left join lateral (
+            select a.*
+            from public.accounts a
+            where a.source_env = p.source_env
+              and (
+                (nullif(p.aid, '') is not null and a.aid = p.aid)
+                or (nullif(p.cid, '') is not null and a.cid = p.cid)
+              )
+            order by
+              case
+                when nullif(p.aid, '') is not null and a.aid = p.aid then 0
+                else 1
+              end,
+              a.created_at desc nulls last
+            limit 1
+          ) a on true
           left join lateral (
             select c.*
             from public.contacts c
@@ -4848,6 +4941,8 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
               and (
                 (nullif(p.cid, '') is not null and c.cid = p.cid)
                 or (nullif(p.cid, '') is null and nullif(p.aid, '') is not null and c.aid = p.aid)
+                or (nullif(a.cid, '') is not null and c.cid = a.cid)
+                or (nullif(a.aid, '') is not null and c.aid = a.aid)
                 or (
                   nullif(p.cid, '') is null
                   and nullif(p.aid, '') is null
@@ -5172,6 +5267,14 @@ app.get("/api/live-module/:moduleKey", requireAuth, async (req, res) => {
           ],
           createFields: [...cfg.createFields, "address", "zipcode", "gst_number"]
         },
+        summary: summary || { total_count: 0, amount_total: 0, month_count: 0 },
+        rows
+      });
+    }
+    if (moduleKey === "payments") {
+      const { summary, rows, config } = await listCustomerPaymentsWithCurrentIdentity(cfg);
+      return res.json({
+        config,
         summary: summary || { total_count: 0, amount_total: 0, month_count: 0 },
         rows
       });
