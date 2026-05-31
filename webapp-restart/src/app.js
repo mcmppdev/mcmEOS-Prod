@@ -1423,17 +1423,7 @@ function liveModuleConfig(moduleKey) {
       createFields: ["name", "company", "customer_type", "mobile", "city", "state", "lead_status", "source", "assigned_to", "follow_up_date", "notes", "converted_cid"],
       actorMode: "created_by"
     },
-    sales: {
-      table: "public.sales",
-      pk: "sale_id",
-      prefix: "SAL",
-      dateField: "sale_date",
-      titleField: "customer_name_snapshot",
-      amountField: "total_amount",
-      columns: ["sale_id", "sale_date", "customer_name_snapshot", "company_name_snapshot", "product_name_snapshot", "packaging_type", "packets_quantity", "box_quantity", "total_amount", "status", "note"],
-      createFields: ["sale_date", "customer_name_snapshot", "company_name_snapshot", "customer_mobile_snapshot", "product_name_snapshot", "packaging_type", "unit_price", "packets_quantity", "box_quantity", "total_amount", "status", "note"],
-      actorMode: "created_by"
-    },
+    // Legacy public.sales is archived only; active sales use sales_entries and sales_line_items.
     payments: {
       table: "public.customer_payments",
       pk: "payment_id",
