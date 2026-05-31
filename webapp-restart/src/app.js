@@ -468,7 +468,7 @@ function leadershipTtlSeconds(section) {
 }
 
 function leadershipCacheKey(section, range) {
-  return ["v6", APP_ENV, section, range?.period || "", range?.start || "", range?.end || ""].join("|");
+  return ["v7", APP_ENV, section, range?.period || "", range?.start || "", range?.end || ""].join("|");
 }
 
 async function ensureLeadershipSnapshotTable() {
@@ -564,7 +564,7 @@ async function invalidateLeadershipSnapshots(sections) {
   const uniqueSections = [...new Set((sections || []).filter(Boolean))];
   if (!uniqueSections.length) return;
   await ensureLeadershipSnapshotTable();
-  const patterns = uniqueSections.map((section) => `v6|${APP_ENV}|${section}|%`);
+  const patterns = uniqueSections.flatMap((section) => [`v6|${APP_ENV}|${section}|%`, `v7|${APP_ENV}|${section}|%`]);
   const whereSql = patterns.map((_, index) => `cache_key like $${index + 1}`).join(" or ");
   await pool.query(`delete from public.leadership_report_snapshots where ${whereSql}`, patterns);
 }
@@ -4617,7 +4617,7 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
     if (cached && !forceRefresh && snapshotAgeSeconds(cached) <= ttlSeconds) {
       return res.json({ ...cached.payload, quota: quotaBefore, cache: leadershipCacheMeta(cached, { hit: true }) });
     }
-    if (cached && forceRefresh && snapshotAgeSeconds(cached) < 120) {
+    if (cached && forceRefresh && section !== "customer-dues" && snapshotAgeSeconds(cached) < 120) {
       return res.json({ ...cached.payload, quota: quotaBefore, cache: leadershipCacheMeta(cached, { hit: true, forceLimited: true }) });
     }
     if (quotaBefore.remaining <= 0) {
@@ -4878,7 +4878,9 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                 when nullif(s.aid, '') is not null and a.aid = s.aid then 0
                 else 1
               end,
-              a.created_at desc nulls last
+              a.updated_at desc nulls last,
+              a.created_at desc nulls last,
+              a.aid asc
             limit 1
           ) a on true
           left join lateral (
@@ -4911,7 +4913,9 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                 when nullif(s.aid, '') is not null and c.aid = s.aid then 1
                 else 2
               end,
-              c.created_at desc nulls last
+              c.updated_at desc nulls last,
+              c.created_at desc nulls last,
+              c.cid asc
             limit 1
           ) c on true
           where s.source_env = $1
@@ -4955,7 +4959,9 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                 when nullif(p.aid, '') is not null and a.aid = p.aid then 0
                 else 1
               end,
-              a.created_at desc nulls last
+              a.updated_at desc nulls last,
+              a.created_at desc nulls last,
+              a.aid asc
             limit 1
           ) a on true
           left join lateral (
@@ -4988,7 +4994,9 @@ app.get("/api/leadership/:section", requireAuth, async (req, res) => {
                 when nullif(p.aid, '') is not null and c.aid = p.aid then 1
                 else 2
               end,
-              c.created_at desc nulls last
+              c.updated_at desc nulls last,
+              c.created_at desc nulls last,
+              c.cid asc
             limit 1
           ) c on true
           where p.source_env = $1
